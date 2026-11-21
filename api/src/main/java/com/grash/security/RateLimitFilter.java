@@ -65,6 +65,21 @@ public class RateLimitFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    /**
+     * Hosting platforms poll the health endpoint every few seconds. Without an
+     * exemption the unauthenticated long-term bucket would answer 429 and the
+     * platform would keep restarting the instance.
+     */
+    @Override
+    protected boolean shouldNotFilter(@NotNull HttpServletRequest request) {
+        String path = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (contextPath != null && !contextPath.isEmpty() && path.startsWith(contextPath)) {
+            path = path.substring(contextPath.length());
+        }
+        return "/health-check".equals(path);
+    }
+
     private static void setResponseTooManyRequests(@NotNull HttpServletResponse response) throws IOException {
         response.setStatus(429); // HTTP 429 Too Many Requests
         response.setContentType("application/json");

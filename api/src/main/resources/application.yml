@@ -73,7 +73,9 @@ spring:
   cache:
     type: caffeine
 server:
-  port: 8080 # This is the default port anyway, but you can change it here
+  # Render injects PORT at runtime; 8080 keeps local/Docker behavior unchanged.
+  port: ${PORT:8080}
+  address: 0.0.0.0
 
 security:
   jwt:

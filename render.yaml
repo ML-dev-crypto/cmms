@@ -1,0 +1,127 @@
+# Render Blueprint for the Hospital CMMS.
+#
+# Two services:
+#   hospital-cmms-api  Spring Boot backend (existing api/Dockerfile), Supabase PostgreSQL
+#   hospital-cmms-web  React static site (frontend/build, generated runtime config)
+#
+# Secrets are never stored here: every credential uses `sync: false`, which makes
+# Render prompt for the value in the Dashboard. Non-secret URLs use the service
+# names below; if Render assigns a different subdomain (name already taken), update
+# PUBLIC_API_URL, PUBLIC_FRONT_URL, PUBLIC_HOME_URL and the frontend API_URL/HOME_URL
+# after the first deploy.
+services:
+  - type: web
+    name: hospital-cmms-api
+    runtime: docker
+    plan: starter
+    region: singapore
+    # Paths are relative to the repository root.
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: ./api
+    healthCheckPath: /health-check
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      # PORT is injected by Render at runtime; do not declare it here.
+      # application.yml binds server.port to ${PORT:8080} and server.address to 0.0.0.0.
+      - key: JAVA_OPTS
+        value: -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError
+
+      # Supabase PostgreSQL (session pooler). DB_URL has no jdbc: prefix, e.g.
+      # aws-1-ap-southeast-2.pooler.supabase.com:5432/postgres?sslmode=require
+      - key: DB_URL
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PWD
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+
+      # Public URLs used in emails, OAuth redirects and CORS.
+      - key: PUBLIC_API_URL
+        value: https://hospital-cmms-api.onrender.com
+      - key: PUBLIC_FRONT_URL
+        value: https://hospital-cmms-web.onrender.com
+      - key: PUBLIC_HOME_URL
+        value: https://hospital-cmms-web.onrender.com
+      - key: ENABLE_CORS
+        value: "true"
+
+      # Persistent S3-compatible object storage is required for attachments.
+      # Render's local disk is ephemeral and the app has no local-filesystem
+      # storage implementation. All five values below are mandatory for uploads.
+      - key: STORAGE_TYPE
+        value: minio
+      - key: MINIO_ENDPOINT
+        sync: false
+      - key: MINIO_BUCKET
+        sync: false
+      - key: MINIO_ACCESS_KEY
+        sync: false
+      - key: MINIO_SECRET_KEY
+        sync: false
+      - key: PUBLIC_MINIO_ENDPOINT
+        sync: false
+
+      # Email is disabled by default; MAIL_RECIPIENTS is still required at startup.
+      - key: MAIL_TYPE
+        value: smtp
+      - key: MAIL_RECIPIENTS
+        value: noreply@example.com
+      - key: ENABLE_EMAIL_NOTIFICATIONS
+        value: "false"
+      - key: INVITATION_VIA_EMAIL
+        value: "false"
+
+  - type: web
+    name: hospital-cmms-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci --legacy-peer-deps && npm run generate:runtime-env && npm run build
+    # Relative to rootDir. public/_redirects still provides the SPA fallback for
+    # hosts that support it; the route below does the same on Render.
+    staticPublishPath: build
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    # Render does not read public/_headers. Keep these in sync with that file,
+    # which still serves hosts that do read it.
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self' 'unsafe-inline' google.com https://*.paddle.com https://*.googletagmanager.com https://*.clarity.ms https://*.intercomcdn.com https://*.intercom.io https://*.google.com https://*.googleapis.com https://*.googleadservices.com https://*.doubleclick.net https://public.profitwell.com https://*.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.paddle.com; img-src 'self' data: blob: https://hospital-cmms-api.onrender.com https://*.supabase.co google.com https://*.google.com https://*.googleapis.com https://*.gstatic.com https://*.doubleclick.net https://*.googleadservices.com https://*.intercomcdn.com https://static.intercomassets.com https://storage.googleapis.com https://*.clarity.ms https://*.bing.com; font-src 'self' data: https://*.gstatic.com https://*.intercomcdn.com; connect-src 'self' wss: ws: https://api.atlas-cmms.com https://hospital-cmms-api.onrender.com https://*.supabase.co https://*.ingest.sentry.io https://*.ingest.de.sentry.io https://*.intercom.io https://*.clarity.ms https://*.google.com google.com https://*.google-analytics.com https://*.doubleclick.net https://*.paddle.com https://*.googleapis.com https://*.profitwell.com; media-src 'self' https://*.intercomcdn.com https://*.supabase.co; frame-src 'self' https://*.intercomcdn.com https://*.google.com https://*.intercom.io https://*.paddle.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_OPTIONS
+        value: --max_old_space_size=4096
+      - key: NODE_ENV
+        value: production
+      # Keep the CRA build inside Render's build memory and avoid CI=true
+      # turning lint warnings into build failures. Type checking stays in CI
+      # via `tsc --noEmit`.
+      - key: CI
+        value: "false"
+      - key: GENERATE_SOURCEMAP
+        value: "false"
+      - key: LOW_MEMORY_BUILD
+        value: "true"
+      - key: DISABLE_FORK_TS_CHECKER
+        value: "true"
+
+      # Written into public/runtime-env.js at build time; must be browser-reachable.
+      - key: API_URL
+        value: https://hospital-cmms-api.onrender.com/
+      - key: HOME_URL
+        value: https://hospital-cmms-web.onrender.com

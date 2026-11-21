@@ -12,12 +12,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -178,5 +180,19 @@ class RateLimitFilterTest {
         verify(response).setCharacterEncoding("UTF-8");
         assertTrue(stringWriter.toString().contains("Rate limit exceeded"),
                 "Response should contain rate limit error message");
+    }
+
+    @Test
+    void shouldSkipHealthCheckRequests() throws Exception {
+        MockHttpServletRequest healthCheckRequest = new MockHttpServletRequest("GET", "/health-check");
+
+        assertTrue(filter.shouldNotFilter(healthCheckRequest));
+    }
+
+    @Test
+    void shouldRateLimitOtherRequests() throws Exception {
+        MockHttpServletRequest apiRequest = new MockHttpServletRequest("GET", "/work-orders");
+
+        assertFalse(filter.shouldNotFilter(apiRequest));
     }
 }
