@@ -133,6 +133,10 @@ security:
 frontend:
   url: ${PUBLIC_FRONT_URL}
   home-url: ${PUBLIC_HOME_URL:}
+  # Extra browser origins accepted by CORS, comma-separated. PUBLIC_FRONT_URL and
+  # PUBLIC_HOME_URL are always added. Wildcards are ignored because credentials are
+  # allowed. Override with ALLOWED_ORIGINS, keeping the Railway frontend origin in it.
+  allowed-origins: ${ALLOWED_ORIGINS:https://hospital-cmms-web-production.up.railway.app}
 mail:
   recipients: ${MAIL_RECIPIENTS}
   enable: ${ENABLE_EMAIL_NOTIFICATIONS:false}

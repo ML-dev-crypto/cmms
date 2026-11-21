@@ -18,12 +18,15 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 class WebMvcConfigTest {
+
+    private static final String RAILWAY_ORIGIN = "https://hospital-cmms-web-production.up.railway.app";
 
     private static class ExposedCorsRegistry extends CorsRegistry {
         Map<String, CorsConfiguration> getConfigurations() {
@@ -41,6 +44,7 @@ class WebMvcConfigTest {
         webMvcConfig = new WebMvcConfig(currentUserResolver);
         ReflectionTestUtils.setField(webMvcConfig, "frontendUrl", "http://localhost:3000");
         ReflectionTestUtils.setField(webMvcConfig, "frontendHomeUrl", "http://localhost:3001");
+        ReflectionTestUtils.setField(webMvcConfig, "allowedOrigins", RAILWAY_ORIGIN);
         ReflectionTestUtils.setField(webMvcConfig, "enableCors", true);
     }
 
@@ -51,22 +55,49 @@ class WebMvcConfigTest {
         webMvcConfig.addCorsMappings(registry);
 
         CorsConfiguration configuration = registry.getConfigurations().get("/**");
-        assertEquals(List.of("http://localhost:3000", "http://localhost:3001"), configuration.getAllowedOrigins());
-        assertTrue(configuration.getAllowedMethods().contains("GET"));
-        assertTrue(configuration.getAllowedMethods().contains("DELETE"));
+        assertEquals(
+                List.of("http://localhost:3000", "http://localhost:3001", RAILWAY_ORIGIN),
+                configuration.getAllowedOrigins());
+        assertTrue(configuration.getAllowedMethods().containsAll(
+                List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD")));
+        assertTrue(configuration.getAllowedHeaders().containsAll(
+                List.of("Authorization", "Content-Type")));
         assertTrue(configuration.getAllowCredentials());
         assertEquals(3600, configuration.getMaxAge());
     }
 
     @Test
-    void addCorsMappings_whenDisabled_allowsAllMethods() {
+    void addCorsMappings_whenDisabled_registersNoCorsMapping() {
         ReflectionTestUtils.setField(webMvcConfig, "enableCors", false);
         ExposedCorsRegistry registry = new ExposedCorsRegistry();
 
         webMvcConfig.addCorsMappings(registry);
 
-        CorsConfiguration configuration = registry.getConfigurations().get("/**");
-        assertTrue(configuration.getAllowedMethods().contains("*"));
+        assertTrue(registry.getConfigurations().isEmpty());
+    }
+
+    @Test
+    void addCorsMappings_ignoresWildcardOrigin() {
+        ReflectionTestUtils.setField(webMvcConfig, "allowedOrigins", "*, https://extra.example.com");
+
+        ExposedCorsRegistry registry = new ExposedCorsRegistry();
+        webMvcConfig.addCorsMappings(registry);
+
+        List<String> origins = registry.getConfigurations().get("/**").getAllowedOrigins();
+        assertFalse(origins.contains("*"));
+        assertTrue(origins.contains("https://extra.example.com"));
+    }
+
+    @Test
+    void addCorsMappings_normalizesTrailingSlashAndDuplicates() {
+        ReflectionTestUtils.setField(webMvcConfig, "frontendUrl", "https://app.example.com/");
+        ReflectionTestUtils.setField(webMvcConfig, "allowedOrigins", " https://app.example.com , ");
+
+        ExposedCorsRegistry registry = new ExposedCorsRegistry();
+        webMvcConfig.addCorsMappings(registry);
+
+        List<String> origins = registry.getConfigurations().get("/**").getAllowedOrigins();
+        assertEquals(List.of("https://app.example.com", "http://localhost:3001"), origins);
     }
 
     @Test
