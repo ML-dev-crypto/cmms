@@ -104,7 +104,6 @@
     "redux": "4.2.0",
     "redux-devtools-extension": "2.13.9",
     "redux-thunk": "2.4.1",
-    "runtime-env-cra": "^0.2.4",
     "scheduler": "^0.23.0",
     "sockjs-client": "^1.6.1",
     "stompjs": "^2.3.3",
@@ -122,9 +121,10 @@
     "yup": "0.32.11"
   },
   "scripts": {
-    "start": "cross-env NODE_ENV=development runtime-env-cra --config-name=./public/runtime-env.js && react-app-rewired start --max_old_space_size=6096",
+    "start": "cross-env NODE_ENV=development node scripts/generate-runtime-env.js && react-app-rewired start --max_old_space_size=6096",
     "build": "react-app-rewired build",
     "generate:runtime-env": "node scripts/generate-runtime-env.js",
+    "test:runtime-env": "node --test scripts/generate-runtime-env.test.js",
     "eject": "react-scripts eject",
     "lint": "eslint .",
     "lint:fix": "eslint --fix",
