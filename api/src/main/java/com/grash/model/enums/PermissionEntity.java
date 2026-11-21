@@ -15,5 +15,8 @@ public enum PermissionEntity {
     LOCATIONS,
     SETTINGS,
     REQUESTS,
-    ANALYTICS
+    ANALYTICS,
+    // Appended for hospital/department master data. Never reorder existing values:
+    // they are persisted as SMALLINT ordinals.
+    HOSPITALS_AND_DEPARTMENTS
 }

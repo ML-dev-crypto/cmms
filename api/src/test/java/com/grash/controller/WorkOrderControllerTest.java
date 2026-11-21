@@ -47,7 +47,13 @@ class WorkOrderControllerTest extends AbstractControllerTest {
     @MockitoBean
     private WorkOrderService workOrderService;
     @MockitoBean
+    private WorkOrderLifecycleService workOrderLifecycleService;
+    @MockitoBean
+    private WorkOrderVerificationService workOrderVerificationService;
+    @MockitoBean
     private WorkOrderMapper workOrderMapper;
+    @MockitoBean
+    private com.grash.mapper.UserMapper userMapper;
     @MockitoBean
     private UserService userService;
     @MockitoBean
@@ -678,6 +684,105 @@ class WorkOrderControllerTest extends AbstractControllerTest {
             mockMvc.perform(delete("/work-orders/files/1/1/remove"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0].name").value("removed.pdf"));
+        }
+    }
+
+    @Nested
+    class VerificationTests {
+
+        @Test
+        void verificationQueue_returnsAwaitingWorkOrders() throws Exception {
+            setCurrentUser(clientUser);
+            when(userService.whoami(any())).thenReturn(clientUser);
+            com.grash.dto.workOrder.WorkOrderVerificationQueueItemDTO item =
+                    new com.grash.dto.workOrder.WorkOrderVerificationQueueItemDTO();
+            item.setId(5L);
+            item.setTitle("Awaiting pump");
+            item.setLifecycleState(com.grash.model.enums.WorkOrderLifecycleState.VERIFICATION_PENDING);
+            when(workOrderVerificationService.getQueue(clientUser, false)).thenReturn(Collections.singletonList(item));
+
+            mockMvc.perform(get("/work-orders/verification/queue"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].id").value(5))
+                    .andExpect(jsonPath("$[0].title").value("Awaiting pump"));
+        }
+
+        @Test
+        void verificationQueue_requiresClientRole() throws Exception {
+            setCurrentUser(nonClientUser);
+            when(userService.whoami(any())).thenReturn(nonClientUser);
+
+            mockMvc.perform(get("/work-orders/verification/queue"))
+                    .andExpect(status().isForbidden());
+            verify(workOrderVerificationService, never()).getQueue(any(), anyBoolean());
+        }
+
+        @Test
+        void verificationCount_returnsOutstandingCount() throws Exception {
+            setCurrentUser(clientUser);
+            when(userService.whoami(any())).thenReturn(clientUser);
+            when(workOrderVerificationService.getCount(clientUser, true))
+                    .thenReturn(new com.grash.dto.workOrder.WorkOrderVerificationCountDTO(3));
+
+            mockMvc.perform(get("/work-orders/verification/count").param("assignedToMe", "true"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.count").value(3));
+        }
+
+        @Test
+        void verificationDetails_returnsDetailPayload() throws Exception {
+            setCurrentUser(clientUser);
+            when(userService.whoami(any())).thenReturn(clientUser);
+            com.grash.dto.workOrder.WorkOrderVerificationDetailDTO detail =
+                    new com.grash.dto.workOrder.WorkOrderVerificationDetailDTO();
+            detail.setAwaitingVerification(true);
+            detail.setCanDecide(true);
+            when(workOrderVerificationService.getDetails(1L, clientUser)).thenReturn(detail);
+
+            mockMvc.perform(get("/work-orders/1/verification"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.awaitingVerification").value(true))
+                    .andExpect(jsonPath("$.canDecide").value(true));
+        }
+
+        @Test
+        void approveVerification_delegatesWithPlatformHeader() throws Exception {
+            setCurrentUser(clientUser);
+            when(userService.whoami(any())).thenReturn(clientUser);
+            when(workOrderVerificationService.approve(eq(1L), isNull(), eq(clientUser), eq("ios")))
+                    .thenReturn(new com.grash.dto.workOrder.WorkOrderVerificationDetailDTO());
+
+            mockMvc.perform(post("/work-orders/1/verification/approve")
+                            .header("X-Platform", "ios"))
+                    .andExpect(status().isOk());
+            verify(workOrderVerificationService).approve(eq(1L), isNull(), eq(clientUser), eq("ios"));
+        }
+
+        @Test
+        void rejectVerification_withoutReason_returnsBadRequest() throws Exception {
+            setCurrentUser(clientUser);
+            when(userService.whoami(any())).thenReturn(clientUser);
+            when(workOrderVerificationService.reject(eq(1L), any(), eq(clientUser)))
+                    .thenThrow(new CustomException("A rejection reason is required", HttpStatus.BAD_REQUEST));
+
+            mockMvc.perform(post("/work-orders/1/verification/reject")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"reason\":\"\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void assignVerifier_delegatesToService() throws Exception {
+            setCurrentUser(clientUser);
+            when(userService.whoami(any())).thenReturn(clientUser);
+            when(workOrderVerificationService.assignVerifier(eq(1L), eq(9L), eq(clientUser)))
+                    .thenReturn(new com.grash.dto.workOrder.WorkOrderVerificationDetailDTO());
+
+            mockMvc.perform(put("/work-orders/1/verification/verifier")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"verifierId\":9}"))
+                    .andExpect(status().isOk());
+            verify(workOrderVerificationService).assignVerifier(1L, 9L, clientUser);
         }
     }
 }

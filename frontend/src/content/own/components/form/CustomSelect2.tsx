@@ -32,6 +32,8 @@ import { getPriorityLabel } from '../../../../utils/formatters';
 import { addCategory, getCategories } from '../../../../slices/category';
 import { getRoles } from '../../../../slices/role';
 import { getCurrencies } from '../../../../slices/currency';
+import { getHospitalsMini } from '../../../../slices/hospital';
+import { getDepartmentsMini } from '../../../../slices/department';
 import { useTranslation } from 'react-i18next';
 import SelectLocationModal from './SelectLocationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -94,6 +96,8 @@ export const CustomSelect = ({
   const { teamsMini } = useSelector((state) => state.teams);
   const { roles } = useSelector((state) => state.roles);
   const { currencies } = useSelector((state) => state.currencies);
+  const { hospitalsMini } = useSelector((state) => state.hospitals);
+  const { departmentsMini } = useSelector((state) => state.departments);
 
   const fetchCustomers = async () => {
     dispatch(getCustomersMini());
@@ -110,6 +114,12 @@ export const CustomSelect = ({
   };
   const fetchRoles = async () => {
     dispatch(getRoles());
+  };
+  const fetchHospitals = async () => {
+    dispatch(getHospitalsMini());
+  };
+  const fetchDepartments = async () => {
+    dispatch(getDepartmentsMini());
   };
 
   const fetchCategories = async (category: string) => {
@@ -734,6 +744,24 @@ export const CustomSelect = ({
         };
       });
       onOpen = fetchRoles;
+      break;
+    case 'hospital':
+      options = hospitalsMini.map((hospital) => {
+        return {
+          label: hospital.name,
+          value: hospital.id
+        };
+      });
+      onOpen = fetchHospitals;
+      break;
+    case 'department':
+      options = departmentsMini.map((department) => {
+        return {
+          label: department.name,
+          value: department.id
+        };
+      });
+      onOpen = fetchDepartments;
       break;
     case 'category':
       const categoryOptions =

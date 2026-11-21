@@ -20,6 +20,7 @@ import com.grash.model.Currency;
 import com.grash.model.enums.*;
 import com.grash.model.enums.webhook.WOField;
 import com.grash.model.enums.webhook.WebhookEvent;
+import com.grash.model.enums.workflow.WFMainCondition;
 import com.grash.repository.FileRepository;
 import com.grash.repository.WorkOrderRepository;
 import com.grash.utils.Consts;
@@ -130,6 +131,10 @@ class WorkOrderServiceTest {
     @Mock
     private WorkOrderHistoryService workOrderHistoryService;
     @Mock
+    private WorkOrderLifecycleService workOrderLifecycleService;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher applicationEventPublisher;
+    @Mock
     private org.springframework.core.env.Environment environment;
     @Mock
     private FileRepository fileRepository;
@@ -212,6 +217,37 @@ class WorkOrderServiceTest {
     }
 
     // ─── Helper methods ───────────────────────────────────────────────
+
+    private void stubLifecycleBridge() {
+        lenient().when(workOrderLifecycleService.resolveCurrentState(any())).thenAnswer(inv -> {
+            WorkOrder workOrder = inv.getArgument(0);
+            return workOrder.getLifecycleState() != null
+                    ? workOrder.getLifecycleState() : WorkOrderLifecycleState.REPORTED;
+        });
+        lenient().when(workOrderLifecycleService.planLegacyStatusChange(any(), any(), any())).thenAnswer(inv -> {
+            WorkOrder workOrder = inv.getArgument(0);
+            Status targetStatus = inv.getArgument(1);
+            WorkOrderLifecycleState from = workOrderLifecycleService.resolveCurrentState(workOrder);
+            if (from.toLegacyStatus() == targetStatus) return List.of();
+            WorkOrderLifecycleState target = switch (targetStatus) {
+                case OPEN -> WorkOrderLifecycleState.REPORTED;
+                case IN_PROGRESS -> WorkOrderLifecycleState.IN_PROGRESS;
+                case ON_HOLD -> WorkOrderLifecycleState.WAITING_ON_HOLD;
+                case COMPLETE -> WorkOrderLifecycleState.WORK_COMPLETED;
+            };
+            return List.of(new com.grash.dto.workOrder.WorkOrderTransitionPlan(from, target,
+                    WorkOrderTransitionReasonCode.LEGACY_STATUS_CHANGE, "legacy", false));
+        });
+        lenient().doAnswer(inv -> {
+            WorkOrder workOrder = inv.getArgument(0);
+            com.grash.dto.workOrder.WorkOrderTransitionPlan plan = inv.getArgument(1);
+            workOrder.setLifecycleState(plan.targetState());
+            workOrder.setStatus(plan.targetState().toLegacyStatus());
+            return null;
+        }).when(workOrderLifecycleService).applyTransition(any(), any());
+        lenient().when(workOrderLifecycleService.recordTransition(any(), any(), any(), any(), any()))
+                .thenReturn(new WorkOrderTransition());
+    }
 
     private WorkOrder buildWorkOrder(Long id) {
         WorkOrder wo = new WorkOrder();
@@ -1108,6 +1144,7 @@ class WorkOrderServiceTest {
             lenient().when(laborService.findByWorkOrder(1L)).thenReturn(Collections.emptyList());
             lenient().when(licenseService.hasEntitlement(LicenseEntitlement.SIGNATURE_CAPTURE)).thenReturn(true);
             lenient().when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
+            stubLifecycleBridge();
         }
 
         @Test
@@ -1128,7 +1165,7 @@ class WorkOrderServiceTest {
         }
 
         @Test
-        void signatureWithEntitlementButPlanLacksFeature_throwsForbidden() {
+        void signatureWithEntitlement_proceedsEvenWhenLegacyPlanFlagAbsent() {
             stubBasic();
             dto.setSignature("data:image/png;base64,c2ln");
             SubscriptionPlan planWithoutSignature = SubscriptionPlan.builder()
@@ -1141,9 +1178,9 @@ class WorkOrderServiceTest {
                     .subscriptionPlan(planWithoutSignature)
                     .build();
             company.setSubscription(subscriptionWithoutSignature);
-            CustomException ex = assertThrows(CustomException.class,
-                    () -> workOrderService.changeStatus(dto, 1L, user, "ios"));
-            assertEquals(HttpStatus.FORBIDDEN, ex.getHttpStatus());
+            // Phase 3: authorization for signatures is enforced by the LicenseService entitlement check
+            // above; the legacy plan feature flag no longer silently blocks state changes.
+            assertDoesNotThrow(() -> workOrderService.changeStatus(dto, 1L, user, "ios"));
         }
 
         @Test
@@ -1236,7 +1273,6 @@ class WorkOrderServiceTest {
             });
             doNothing().when(assetService).stopDownTime(anyLong(), any());
             when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
-            when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
 
             workOrderService.changeStatus(dto, 1L, user, "ios");
             verify(assetService).stopDownTime(eq(10L), any());
@@ -1256,7 +1292,6 @@ class WorkOrderServiceTest {
                 return saved;
             });
             when(workOrderRepository.findByAsset_Id(10L)).thenReturn(List.of(wo, otherWO));
-            when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
 
             workOrderService.changeStatus(dto, 1L, user, "ios");
             verify(assetService, never()).stopDownTime(anyLong(), any());
@@ -1285,7 +1320,6 @@ class WorkOrderServiceTest {
                 return saved;
             });
             doNothing().when(assetService).stopDownTime(anyLong(), any());
-            when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
             when(mailServiceFactory.getMailService()).thenReturn(mailService);
             generalPreferences.setWoUpdateForRequesters(true);
 
@@ -1296,7 +1330,7 @@ class WorkOrderServiceTest {
         }
 
         @Test
-        void reviewEligibilityIncrement_firesOnFirstCompleteFromIosPlatform() {
+        void reviewEligibility_notIncrementedByLegacyTechnicianCompletionFromIos() {
             wo.setStatus(Status.OPEN);
             dto.setStatus(Status.COMPLETE);
             stubBasic();
@@ -1306,15 +1340,15 @@ class WorkOrderServiceTest {
                 return saved;
             });
             doNothing().when(assetService).stopDownTime(anyLong(), any());
-            when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
-            when(reviewEligibilityService.getOrCreate(any())).thenReturn(new UserAppStats());
+            when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
 
             workOrderService.changeStatus(dto, 1L, user, "ios");
-            verify(reviewEligibilityService).incrementWorkOrder(any());
+            // Phase 3: technician completion is no longer official closure.
+            verify(reviewEligibilityService, never()).incrementWorkOrder(any());
         }
 
         @Test
-        void reviewEligibilityIncrement_firesOnAndroidPlatform() {
+        void reviewEligibility_notIncrementedByLegacyTechnicianCompletionFromAndroid() {
             wo.setStatus(Status.OPEN);
             dto.setStatus(Status.COMPLETE);
             stubBasic();
@@ -1324,11 +1358,10 @@ class WorkOrderServiceTest {
                 return saved;
             });
             doNothing().when(assetService).stopDownTime(anyLong(), any());
-            when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
-            when(reviewEligibilityService.getOrCreate(any())).thenReturn(new UserAppStats());
+            when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
 
             workOrderService.changeStatus(dto, 1L, user, "android");
-            verify(reviewEligibilityService).incrementWorkOrder(any());
+            verify(reviewEligibilityService, never()).incrementWorkOrder(any());
         }
 
         @Test
@@ -1342,7 +1375,7 @@ class WorkOrderServiceTest {
                 return saved;
             });
             doNothing().when(assetService).stopDownTime(anyLong(), any());
-            when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
+            when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
 
             workOrderService.changeStatus(dto, 1L, user, "web");
             verify(reviewEligibilityService, never()).incrementWorkOrder(any());
@@ -1351,6 +1384,7 @@ class WorkOrderServiceTest {
         @Test
         void reviewEligibility_notIncrementedOnSecondCompleteTransition() {
             wo.setStatus(Status.COMPLETE);
+            wo.setLifecycleState(WorkOrderLifecycleState.WORK_COMPLETED);
             wo.setCompletedBy(user);
             wo.setCompletedOn(new Date());
             dto.setStatus(Status.COMPLETE);
@@ -1363,6 +1397,51 @@ class WorkOrderServiceTest {
 
             workOrderService.changeStatus(dto, 1L, user, "ios");
             verify(reviewEligibilityService, never()).incrementWorkOrder(any());
+        }
+
+        @Test
+        void legacyTechnicianCompletion_doesNotRunClosedWorkflows() {
+            wo.setStatus(Status.IN_PROGRESS);
+            wo.setLifecycleState(WorkOrderLifecycleState.IN_PROGRESS);
+            dto.setStatus(Status.COMPLETE);
+            stubBasic();
+            when(workOrderRepository.saveAndFlush(any())).thenAnswer(inv -> {
+                WorkOrder saved = inv.getArgument(0);
+                saved.setId(1L);
+                return saved;
+            });
+            doNothing().when(assetService).stopDownTime(anyLong(), any());
+            when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
+
+            workOrderService.changeStatus(dto, 1L, user, "ios");
+
+            verify(workflowService, never()).runWorkOrder(any(), any());
+        }
+
+        @Test
+        void officialClosure_runsClosedWorkflowsAndReviewEligibility() {
+            wo.setStatus(Status.COMPLETE);
+            wo.setLifecycleState(WorkOrderLifecycleState.VERIFIED);
+            stubBasic();
+            Workflow workflow = mock(Workflow.class);
+            when(workflowService.findByMainConditionAndCompany(eq(WFMainCondition.WORK_ORDER_CLOSED), anyLong()))
+                    .thenReturn(List.of(workflow));
+            when(reviewEligibilityService.getOrCreate(any())).thenReturn(new UserAppStats());
+            com.grash.dto.workOrder.WorkOrderTransitionPlan plan =
+                    new com.grash.dto.workOrder.WorkOrderTransitionPlan(
+                            WorkOrderLifecycleState.VERIFIED, WorkOrderLifecycleState.CLOSED,
+                            WorkOrderTransitionReasonCode.NORMAL, null, true);
+            when(workOrderLifecycleService.validateTransition(any(), eq(WorkOrderLifecycleState.CLOSED),
+                    any(), any(), any())).thenReturn(plan);
+            com.grash.dto.workOrder.WorkOrderTransitionRequestDTO request =
+                    new com.grash.dto.workOrder.WorkOrderTransitionRequestDTO();
+            request.setTargetState(WorkOrderLifecycleState.CLOSED);
+
+            workOrderService.transitionLifecycle(1L, request, user, "ios");
+
+            verify(workflowService).runWorkOrder(eq(workflow), any());
+            verify(reviewEligibilityService).incrementWorkOrder(any());
+            verify(workOrderLifecycleService).recordTransition(any(), eq(plan), any(), any(), eq(user));
         }
 
         @Test
@@ -1388,6 +1467,7 @@ class WorkOrderServiceTest {
             when(laborService.findByWorkOrder(1L)).thenReturn(Collections.emptyList());
             doNothing().when(assetService).stopDownTime(anyLong(), any());
             when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
+            stubLifecycleBridge();
 
             dto.setStatus(Status.COMPLETE);
             workOrderService.changeStatus(dto, 1L, user, "ios");
@@ -1418,6 +1498,7 @@ class WorkOrderServiceTest {
             when(workOrderMapper.toShowDto(any())).thenReturn(new com.grash.dto.workOrder.WorkOrderShowDTO());
             doNothing().when(em).refresh(any());
             when(laborService.findByWorkOrder(1L)).thenReturn(Collections.emptyList());
+            stubLifecycleBridge();
 
             dto.setStatus(Status.OPEN);
             workOrderService.changeStatus(dto, 1L, user, "ios");
@@ -3082,8 +3163,8 @@ class WorkOrderServiceTest {
             when(workOrderMapper.toShowDto(any())).thenReturn(new com.grash.dto.workOrder.WorkOrderShowDTO());
             doNothing().when(em).refresh(any());
             when(laborService.findByWorkOrder(1L)).thenReturn(Collections.emptyList());
-            when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
             when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
+            stubLifecycleBridge();
 
             workOrderService.changeStatus(dto, 1L, user, "ios");
 
@@ -3118,11 +3199,11 @@ class WorkOrderServiceTest {
             when(workOrderMapper.toShowDto(any())).thenReturn(new com.grash.dto.workOrder.WorkOrderShowDTO());
             doNothing().when(em).refresh(any());
             when(laborService.findByWorkOrder(1L)).thenReturn(Collections.emptyList());
-            when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
             when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
             when(mailServiceFactory.getMailService()).thenReturn(mailService);
             when(userService.findById(5L)).thenReturn(Optional.of(requester));
             generalPreferences.setWoUpdateForRequesters(true);
+            stubLifecycleBridge();
 
             workOrderService.changeStatus(dto, 1L, user, "ios");
 

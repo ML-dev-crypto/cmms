@@ -4,6 +4,9 @@ import com.grash.dto.cutomField.CustomFieldValueShowDTO;
 import com.grash.model.AssetCategory;
 import com.grash.model.Deprecation;
 import com.grash.model.enums.AssetStatus;
+import com.grash.model.enums.ClinicalImpact;
+import com.grash.model.enums.Criticality;
+import com.grash.model.enums.EquipmentType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -40,6 +43,24 @@ public class AssetShowDTO extends AuditShowDTO {
 
     @Schema(description = "Barcode identifier for the asset")
     private String barCode;
+
+    @Schema(description = "Stable asset tag")
+    private String assetTag;
+
+    @Schema(description = "Opaque QR token. Contains no patient or clinical information.")
+    private String qrToken;
+
+    @Schema(description = "Department responsible for the asset")
+    private DepartmentMiniDTO department;
+
+    @Schema(description = "Business criticality")
+    private Criticality criticality;
+
+    @Schema(description = "Equipment type")
+    private EquipmentType equipmentType;
+
+    @Schema(description = "Clinical impact of a failure")
+    private ClinicalImpact clinicalImpact;
 
     @Schema(description = "NFC identifier for the asset")
     private String nfcId;

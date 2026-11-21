@@ -21,6 +21,21 @@ public class LocationPatchDTO {
     @Schema(description = "The physical address of the location")
     private String address;
 
+    @Schema(description = "Hospital the location belongs to", implementation = IdDTO.class)
+    private Hospital hospital;
+
+    @Schema(description = "Department the location belongs to", implementation = IdDTO.class)
+    private Department department;
+
+    @Schema(description = "Building name or number")
+    private String building;
+
+    @Schema(description = "Floor name or number")
+    private String floor;
+
+    @Schema(description = "Room name or number")
+    private String room;
+
     @Schema(description = "The longitude coordinate of the location")
     private Double longitude;
 

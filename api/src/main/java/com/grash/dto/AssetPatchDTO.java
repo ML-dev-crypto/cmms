@@ -3,6 +3,9 @@ package com.grash.dto;
 import com.grash.dto.cutomField.CustomFieldValuePostDTO;
 import com.grash.model.*;
 import com.grash.model.enums.AssetStatus;
+import com.grash.model.enums.ClinicalImpact;
+import com.grash.model.enums.Criticality;
+import com.grash.model.enums.EquipmentType;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -34,6 +37,21 @@ public class AssetPatchDTO {
 
     @Schema(description = "Barcode identifier for the asset")
     private String barCode;
+
+    @Schema(description = "Stable asset tag")
+    private String assetTag;
+
+    @Schema(description = "Department responsible for the asset", implementation = IdDTO.class)
+    private Department department;
+
+    @Schema(description = "Business criticality")
+    private Criticality criticality;
+
+    @Schema(description = "Equipment type")
+    private EquipmentType equipmentType;
+
+    @Schema(description = "Clinical impact of a failure")
+    private ClinicalImpact clinicalImpact;
 
     @Schema(description = "NFC (Near Field Communication) identifier for the asset")
     private String nfcId;

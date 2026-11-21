@@ -48,6 +48,12 @@ public interface AssetRepository extends JpaRepository<Asset, Long>, JpaSpecific
 
     Optional<Asset> findByBarCodeAndCompany_Id(String data, Long id);
 
+    Optional<Asset> findByQrTokenAndCompany_Id(String qrToken, Long companyId);
+
+    boolean existsByQrTokenAndCompany_Id(String qrToken, Long companyId);
+
+    Optional<Asset> findByAssetTagIgnoreCaseAndCompany_Id(String assetTag, Long companyId);
+
     @Query("SELECT a FROM Asset a " +
             "LEFT JOIN FETCH a.location " +
             "LEFT JOIN FETCH a.parentAsset " +
@@ -71,5 +77,7 @@ public interface AssetRepository extends JpaRepository<Asset, Long>, JpaSpecific
     double getTotalAcquisitionCost(@Param("companyId") Long companyId, @Param("end") Date end);
 
     List<Asset> findByLocation_IdAndCompany_Id(Long locationId, Long companyId);
+
+    long countByDepartment_Id(Long departmentId);
 }
 

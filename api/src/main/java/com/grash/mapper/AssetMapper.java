@@ -20,8 +20,17 @@ import java.util.Date;
 import java.util.Set;
 
 @Mapper(componentModel = "spring", uses = {CustomerMapper.class, VendorMapper.class, UserMapper.class,
-        TeamMapper.class, FileMapper.class, PartMapper.class, FileMapper.class, CustomFieldValueMapper.class})
+        TeamMapper.class, FileMapper.class, PartMapper.class, FileMapper.class, CustomFieldValueMapper.class,
+        DepartmentMapper.class})
 public interface AssetMapper {
+
+    @Mappings({
+            @Mapping(target = "assetTag", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE),
+            @Mapping(target = "department", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE),
+            @Mapping(target = "criticality", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE),
+            @Mapping(target = "equipmentType", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE),
+            @Mapping(target = "clinicalImpact", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    })
     Asset updateAsset(@MappingTarget Asset entity, AssetPatchDTO dto);
 
     @Mappings({})

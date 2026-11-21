@@ -23,6 +23,7 @@ export interface TaskBase {
   user?: UserMiniDTO;
   asset?: AssetMiniDTO;
   meter?: MeterMiniDTO;
+  required?: boolean;
 }
 export interface Task {
   id: number;

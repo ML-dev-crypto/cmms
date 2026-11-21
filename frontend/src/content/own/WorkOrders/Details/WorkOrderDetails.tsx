@@ -80,6 +80,8 @@ import {
   getWorkOrderUrl
 } from '../../../../utils/urlPaths';
 import CompleteWOModal from './CompleteWOModal';
+import WorkOrderLifecycleSection from './WorkOrderLifecycleSection';
+import WorkOrderVerificationSection from './WorkOrderVerificationSection';
 import useAuth from '../../../../hooks/useAuth';
 import { PermissionEntity } from '../../../../models/owns/role';
 import { getSingleUserMini } from '../../../../slices/user';
@@ -714,6 +716,12 @@ export default function WorkOrderDetails(props: WorkOrderDetailsProps) {
                         durationToHours(primaryTime?.duration)}
                   </Button>
                 </Box>
+              </Grid>
+              <Grid item xs={12}>
+                <WorkOrderLifecycleSection workOrder={workOrder} />
+              </Grid>
+              <Grid item xs={12}>
+                <WorkOrderVerificationSection workOrder={workOrder} />
               </Grid>
               {workOrder.image && (
                 <Grid

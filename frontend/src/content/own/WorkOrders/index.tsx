@@ -83,6 +83,7 @@ import { FilterField, SearchCriteria } from '../../../models/owns/page';
 import { loadFilterFields, saveFilterFields } from '../../../utils/filter';
 import WorkOrderCalendar from './Calendar';
 import WorkloadView from './WorkloadView';
+import VerificationQueue from './Verification/VerificationQueue';
 import MoreVertTwoToneIcon from '@mui/icons-material/MoreVertTwoTone';
 import FilterAltTwoToneIcon from '@mui/icons-material/FilterAltTwoTone';
 import MoreFilters from './Filters/MoreFilters';
@@ -195,6 +196,14 @@ function WorkOrders() {
       value: 'calendar',
       label: t('calendar_view'),
       disabled: !hasViewPermission(PermissionEntity.WORK_ORDERS)
+    },
+    {
+      value: 'verification',
+      label: t('verification_queue'),
+      hidden:
+        !user?.role?.editOtherPermissions?.includes(
+          PermissionEntity.WORK_ORDERS
+        ) || user.superAccountRelations.length > 0
     },
     {
       value: 'workload',
@@ -1179,6 +1188,8 @@ function WorkOrders() {
                 }
                 eventsRefreshTrigger={calendarRefreshTrigger}
               />
+            ) : currentTab === 'verification' ? (
+              <VerificationQueue handleOpenDetails={handleOpenDetails} />
             ) : (
               <WorkloadView
                 handleOpenDetails={(id, type) => {

@@ -3,6 +3,7 @@ package com.grash.dto.workOrder;
 import com.grash.dto.*;
 import com.grash.dto.cutomField.CustomFieldValueShowDTO;
 import com.grash.model.enums.Status;
+import com.grash.model.enums.WorkOrderLifecycleState;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -22,6 +23,15 @@ public class WorkOrderShowDTO extends WorkOrderBaseShowDTO {
     @Schema(description = "Date and time when the work order was completed")
     private Date completedOn;
 
+    @Schema(description = "Supervisor assigned to verify the completed work")
+    private UserMiniDTO verifier;
+
+    @Schema(description = "Date and time when the work order was officially closed after verification")
+    private Date closedOn;
+
+    @Schema(description = "Supervisor who officially closed the work order")
+    private UserMiniDTO closedBy;
+
     @Schema(description = "Whether the work order is archived")
     private boolean archived;
 
@@ -36,6 +46,9 @@ public class WorkOrderShowDTO extends WorkOrderBaseShowDTO {
 
     @Schema(description = "Current status of the work order")
     private Status status;
+
+    @Schema(description = "Detailed lifecycle state of the work order", accessMode = Schema.AccessMode.READ_ONLY)
+    private WorkOrderLifecycleState lifecycleState;
 
     @Schema(description = "Feedback or notes provided upon work order completion")
     private String feedback;

@@ -5,11 +5,18 @@ import { VendorMiniDTO } from './vendor';
 import { TeamMiniDTO } from './team';
 import { FileMiniDTO, FileThumbnailDTO } from './file';
 import { CustomFieldValue } from './customField';
+import { HospitalMiniDTO } from './hospital';
+import { DepartmentMiniDTO } from './department';
 
 export default interface Location extends Audit {
   id: number;
   name: string;
   address: string;
+  hospital?: HospitalMiniDTO | null;
+  department?: DepartmentMiniDTO | null;
+  building?: string;
+  floor?: string;
+  room?: string;
   longitude: number;
   image: FileThumbnailDTO;
   files: FileMiniDTO[];

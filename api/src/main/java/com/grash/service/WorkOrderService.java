@@ -11,6 +11,9 @@ import com.grash.dto.imports.WorkOrderImportDTO;
 import com.grash.dto.license.LicenseEntitlement;
 import com.grash.dto.workOrder.WorkOrderPostDTO;
 import com.grash.dto.workOrder.WorkOrderSendReportDTO;
+import com.grash.dto.workOrder.WorkOrderTransitionPlan;
+import com.grash.dto.workOrder.WorkOrderTransitionRequestDTO;
+import com.grash.event.WorkOrderVerificationSubmittedEvent;
 import com.grash.exception.CustomException;
 import com.grash.factory.StorageServiceFactory;
 import com.grash.mapper.PreventiveMaintenanceMapper;
@@ -40,6 +43,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.core.env.Environment;
@@ -98,10 +102,12 @@ public class WorkOrderService {
     private final ReviewEligibilityService reviewEligibilityService;
     private final BrandingService brandingService;
     private final WorkOrderHistoryService workOrderHistoryService;
+    private final WorkOrderLifecycleService workOrderLifecycleService;
     private final SpringTemplateEngine thymeleafTemplateEngine;
     private final StorageServiceFactory storageServiceFactory;
     private final Environment environment;
     private final ResourceBundleMessageSource emailMessageSource;
+    private final ApplicationEventPublisher applicationEventPublisher;
     private TaskService taskService;
     private RelationService relationService;
     private CommentService commentService;
@@ -131,6 +137,9 @@ public class WorkOrderService {
         workOrder.setCompletedOn(null);
         workOrder.setSignature(null);
         workOrder.setArchived(false);
+        // Phase 3: every newly created work order starts at REPORTED, mapped to legacy OPEN.
+        workOrder.setLifecycleState(WorkOrderLifecycleState.REPORTED);
+        workOrder.setStatus(Status.OPEN);
         Sanitizer.sanitizeWorkOrder(workOrder);
 
         WorkOrder savedWorkOrder = workOrderRepository.saveAndFlush(workOrder);
@@ -566,6 +575,7 @@ public class WorkOrderService {
         workOrder.setCompletedOn(dto.getCompletedOn() == null ? null : Helper.addSeconds(new Date(), 60 * 10));
         workOrder.setArchived(Helper.getBooleanFromString(dto.getArchived()));
         workOrder.setStatus(Status.getStatusFromString(dto.getStatus()));
+        workOrder.setLifecycleState(WorkOrderLifecycleState.fromLegacyStatus(workOrder.getStatus()));
         workOrder.setFeedback(dto.getFeedback());
         List<Customer> customers = new ArrayList<>();
         dto.getCustomersNames().forEach(name -> {
@@ -831,109 +841,228 @@ public class WorkOrderService {
 
     @Transactional
     public WorkOrder changeStatus(WorkOrderChangeStatusDTO dto, Long id, User user, String platform) {
-        Optional<WorkOrder> optionalWorkOrder = findById(id);
-        WorkOrder savedWorkOrder = optionalWorkOrder.get();
-        em.detach(savedWorkOrder); // detach FIRST
-        WorkOrder originalWorkOrder = savedWorkOrder;
-        WorkOrder mutableWO = findById(id).get(); // fresh managed copy
-
         if (dto.getStatus() == null) throw new CustomException("Status can't be null", HttpStatus.NOT_ACCEPTABLE);
+        WorkOrder originalWorkOrder = findById(id).orElseThrow(() -> new CustomException("Work Order not found",
+                HttpStatus.NOT_FOUND));
+        em.detach(originalWorkOrder);
+        WorkOrder mutableWO = findById(id).orElseThrow(() -> new CustomException("Work Order not found",
+                HttpStatus.NOT_FOUND));
+
         if (mutableWO.getFirstTimeToReact() == null && !dto.getStatus().equals(Status.ON_HOLD))
             mutableWO.setFirstTimeToReact(new Date());
         Status savedWorkOrderStatusBefore = mutableWO.getStatus();
-        if (dto.getSignature() != null && !licenseService.hasEntitlement(LicenseEntitlement.SIGNATURE_CAPTURE))
-            throw new CustomException("You need a license to add signature to work order",
-                    HttpStatus.FORBIDDEN);
-        if (dto.getSignature() != null && !dto.getSignature().trim().isEmpty()
-                && !dto.getSignature().trim().startsWith("data:image/"))
-            throw new CustomException("Invalid signature format",
-                    HttpStatus.BAD_REQUEST);
-        if (dto.getStatus() == Status.COMPLETE && mutableWO.isRequiredSignature()
-                && (dto.getSignature() == null || dto.getSignature().trim().isEmpty()))
-            throw new CustomException("Signature is required to complete this work order",
-                    HttpStatus.BAD_REQUEST);
+        WorkOrderLifecycleState lifecycleBefore = workOrderLifecycleService.resolveCurrentState(mutableWO);
+
+        if (dto.getStatus() == Status.COMPLETE)
+            validateSignaturePayload(mutableWO, dto.getSignature(), true);
+
+        // The legacy endpoint is a compatibility adapter: it may only walk legal lifecycle edges.
+        List<WorkOrderTransitionPlan> plans = workOrderLifecycleService.planLegacyStatusChange(mutableWO,
+                dto.getStatus(), user);
+        if (plans.isEmpty()) {
+            // No state change; still enforce the old edit permission for feedback/signature updates.
+            if (!mutableWO.canBeEditedBy(user))
+                throw new CustomException("Forbidden", HttpStatus.FORBIDDEN);
+            if (dto.getSignature() != null) validateSignaturePayload(mutableWO, dto.getSignature(), false);
+        }
+
         mutableWO.setSignature(dto.getSignature());
-        mutableWO.setStatus(dto.getStatus());
         mutableWO.setFeedback(Sanitizer.cleanText(dto.getFeedback()));
 
-        if (dto.getStatus() != Status.COMPLETE) {
+        WorkOrderLifecycleState finalState = lifecycleBefore;
+        for (WorkOrderTransitionPlan plan : plans) {
+            workOrderLifecycleService.applyTransition(mutableWO, plan);
+            finalState = plan.targetState();
+        }
+
+        boolean reachedTechnicianCompletion = finalState == WorkOrderLifecycleState.WORK_COMPLETED;
+        boolean technicianCompletedNow = plans.stream()
+                .anyMatch(plan -> plan.targetState() == WorkOrderLifecycleState.WORK_COMPLETED);
+
+        if (technicianCompletedNow) {
+            mutableWO.setCompletedBy(user);
+            mutableWO.setCompletedOn(new Date());
+            stopAssetDowntimeIfNoActiveWorkOrder(mutableWO, user);
+            scheduleNextPreventiveMaintenanceAfterCompletion(mutableWO);
+        }
+        if (!finalState.isAfterTechnicianCompletion()) {
             mutableWO.setCompletedOn(null);
             mutableWO.setCompletedBy(null);
         }
-        if (mutableWO.canBeEditedBy(user) && (dto.getSignature() == null ||
-                user.getCompany().getSubscription().getSubscriptionPlan().getFeatures().contains(PlanFeatures.SIGNATURE))) {
-            if (!dto.getStatus().equals(Status.IN_PROGRESS)) {
-                if (dto.getStatus().equals(Status.COMPLETE)) {
-                    mutableWO.setCompletedBy(user);
-                    mutableWO.setCompletedOn(new Date());
-                    if (mutableWO.getAsset() != null) {
-                        Asset asset = mutableWO.getAsset();
-                        Collection<WorkOrder> workOrdersOfSameAsset = findByAsset(asset.getId());
-                        if (workOrdersOfSameAsset.stream().noneMatch(workOrder1 -> !workOrder1.getId().equals(id) && !workOrder1.getStatus().equals(Status.COMPLETE))) {
-                            assetService.stopDownTime(asset.getId(), Helper.getLocale(user));
-                        }
-                    }
-                    if (mutableWO.getParentPreventiveMaintenance() != null)
-                        scheduleService.scheduleNextWorkOrderJobAfterCompletion(mutableWO.getParentPreventiveMaintenance().getSchedule().getId(), mutableWO.getCompletedOn());
-                }
-                Collection<Labor> labors = laborService.findByWorkOrder(id);
-                Collection<Labor> primaryTimes = labors.stream().filter(Labor::isLogged).toList();
-                primaryTimes.forEach(laborService::stop);
-            }
-            WorkOrder patchedWorkOrder = saveAndFlushWithWebhook(mutableWO, user.getCompany(),
-                    originalWorkOrder);
+        if (!finalState.equals(WorkOrderLifecycleState.IN_PROGRESS)) {
+            stopLoggedLabors(mutableWO);
+        }
 
-            if (patchedWorkOrder.getStatus().equals(Status.COMPLETE) && !savedWorkOrderStatusBefore.equals(Status.COMPLETE)) {
-                List<User> admins =
-                        userService.findWorkersByCompany(user.getCompany().getId()).stream().filter(ownUser -> ownUser.getRole().getViewPermissions().contains(PermissionEntity.SETTINGS) && ownUser.isEnabled() && ownUser.getUserSettings().shouldEmailUpdatesForWorkOrders()).collect(Collectors.toList());
-                notificationService.createMultiple(admins.stream().map(admin -> new Notification(messageSource.getMessage("complete_work_order_content", new String[]{patchedWorkOrder.getTitle(), user.getFullName()}, Helper.getLocale(admin)), admin,
-                                NotificationType.WORK_ORDER, id)).collect(Collectors.toList()), true,
-                        messageSource.getMessage("complete_work_order", null, Helper.getLocale(user)));
-                Collection<Workflow> workflows =
-                        workflowService.findByMainConditionAndCompany(WFMainCondition.WORK_ORDER_CLOSED,
-                                user.getCompany().getId());
-                workflows.forEach(workflow -> workflowService.runWorkOrder(workflow, patchedWorkOrder));
+        WorkOrder patchedWorkOrder = saveAndFlushWithWebhook(mutableWO, user.getCompany(),
+                originalWorkOrder);
 
-                if ("ios".equalsIgnoreCase(platform) || "android".equalsIgnoreCase(platform)) {
-                    reviewEligibilityService.incrementWorkOrder(reviewEligibilityService.getOrCreate(user));
-                }
+        if (technicianCompletedNow && !savedWorkOrderStatusBefore.equals(Status.COMPLETE)) {
+            notifyTechnicianCompletion(patchedWorkOrder, user);
+        }
+        // Official closure and WORK_ORDER_CLOSED workflows now belong to CLOSED, not technician
+        // completion. They are intentionally not triggered from the legacy status adapter.
+        if (user.getCompany().getCompanySettings().getGeneralPreferences().isWoUpdateForRequesters()
+                && savedWorkOrderStatusBefore != patchedWorkOrder.getStatus()
+                && patchedWorkOrder.getParentRequest() != null) {
+            notifyRequesterOfStatusChange(patchedWorkOrder, user);
+        }
+        return patchedWorkOrder;
+    }
+
+    /**
+     * Phase 3 lifecycle entry point. Validates the requested edge against the central matrix, applies it,
+     * persists the work order (dispatching webhooks) and appends exactly one history record.
+     */
+    @Transactional
+    public WorkOrder transitionLifecycle(Long id, WorkOrderTransitionRequestDTO dto, User user, String platform) {
+        WorkOrder originalWorkOrder = findById(id).orElseThrow(() -> new CustomException("Work Order not found",
+                HttpStatus.NOT_FOUND));
+        em.detach(originalWorkOrder);
+        WorkOrder mutableWO = findById(id).orElseThrow(() -> new CustomException("Work Order not found",
+                HttpStatus.NOT_FOUND));
+
+        WorkOrderLifecycleState previousState = workOrderLifecycleService.resolveCurrentState(mutableWO);
+        WorkOrderTransitionPlan plan = workOrderLifecycleService.validateTransition(mutableWO,
+                dto.getTargetState(), dto.getReasonCode(), dto.getReason(), user);
+
+        if (plan.targetState() == WorkOrderLifecycleState.WORK_COMPLETED) {
+            validateSignaturePayload(mutableWO, dto.getSignature(), true);
+            mutableWO.setSignature(dto.getSignature());
+            mutableWO.setFeedback(Sanitizer.cleanText(dto.getFeedback()));
+        }
+        if (mutableWO.getFirstTimeToReact() == null && plan.targetState() != WorkOrderLifecycleState.WAITING_ON_HOLD)
+            mutableWO.setFirstTimeToReact(new Date());
+
+        workOrderLifecycleService.applyTransition(mutableWO, plan);
+
+        if (plan.targetState() == WorkOrderLifecycleState.WORK_COMPLETED) {
+            mutableWO.setCompletedBy(user);
+            mutableWO.setCompletedOn(new Date());
+            stopAssetDowntimeIfNoActiveWorkOrder(mutableWO, user);
+            scheduleNextPreventiveMaintenanceAfterCompletion(mutableWO);
+        }
+        if (!plan.targetState().isAfterTechnicianCompletion()) {
+            mutableWO.setCompletedOn(null);
+            mutableWO.setCompletedBy(null);
+        }
+        if (!plan.targetState().equals(WorkOrderLifecycleState.IN_PROGRESS)) {
+            stopLoggedLabors(mutableWO);
+        }
+
+        WorkOrder savedWorkOrder = saveAndFlushWithWebhook(mutableWO, user.getCompany(), originalWorkOrder);
+        workOrderLifecycleService.recordTransition(savedWorkOrder, plan, dto.getReason(), dto.getMetadata(), user);
+
+        if (plan.targetState() == WorkOrderLifecycleState.WORK_COMPLETED) {
+            notifyTechnicianCompletion(savedWorkOrder, user);
+        }
+        if (plan.targetState() == WorkOrderLifecycleState.VERIFICATION_PENDING) {
+            // Phase 4: persist the PENDING verification record and notify the verifier inside this
+            // transaction, without coupling WorkOrderService to WorkOrderVerificationService.
+            applicationEventPublisher.publishEvent(
+                    new WorkOrderVerificationSubmittedEvent(savedWorkOrder.getId(), user.getId()));
+        }
+        if (plan.targetState() == WorkOrderLifecycleState.CLOSED
+                && previousState == WorkOrderLifecycleState.VERIFIED) {
+            runOfficialClosure(savedWorkOrder, user, platform);
+        }
+        return savedWorkOrder;
+    }
+
+    private void validateSignaturePayload(WorkOrder workOrder, String signature, boolean requiredForCompletion) {
+        if (signature != null && !licenseService.hasEntitlement(LicenseEntitlement.SIGNATURE_CAPTURE))
+            throw new CustomException("You need a license to add signature to work order",
+                    HttpStatus.FORBIDDEN);
+        if (signature != null && !signature.trim().isEmpty()
+                && !signature.trim().startsWith("data:image/"))
+            throw new CustomException("Invalid signature format", HttpStatus.BAD_REQUEST);
+        if (requiredForCompletion && workOrder.isRequiredSignature()
+                && (signature == null || signature.trim().isEmpty()))
+            throw new CustomException("Signature is required to complete this work order",
+                    HttpStatus.BAD_REQUEST);
+    }
+
+    private void stopLoggedLabors(WorkOrder workOrder) {
+        Collection<Labor> labors = laborService.findByWorkOrder(workOrder.getId());
+        labors.stream().filter(Labor::isLogged).forEach(laborService::stop);
+    }
+
+    private void stopAssetDowntimeIfNoActiveWorkOrder(WorkOrder workOrder, User user) {
+        if (workOrder.getAsset() == null) return;
+        Asset asset = workOrder.getAsset();
+        Collection<WorkOrder> workOrdersOfSameAsset = findByAsset(asset.getId());
+        if (workOrdersOfSameAsset.stream().noneMatch(other ->
+                !other.getId().equals(workOrder.getId()) && !other.getStatus().equals(Status.COMPLETE))) {
+            assetService.stopDownTime(asset.getId(), Helper.getLocale(user));
+        }
+    }
+
+    private void scheduleNextPreventiveMaintenanceAfterCompletion(WorkOrder workOrder) {
+        if (workOrder.getParentPreventiveMaintenance() != null
+                && workOrder.getParentPreventiveMaintenance().getSchedule() != null) {
+            scheduleService.scheduleNextWorkOrderJobAfterCompletion(
+                    workOrder.getParentPreventiveMaintenance().getSchedule().getId(), workOrder.getCompletedOn());
+        }
+    }
+
+    private void notifyTechnicianCompletion(WorkOrder patchedWorkOrder, User user) {
+        Long id = patchedWorkOrder.getId();
+        List<User> admins = userService.findWorkersByCompany(user.getCompany().getId()).stream()
+                .filter(ownUser -> ownUser.getRole().getViewPermissions().contains(PermissionEntity.SETTINGS)
+                        && ownUser.isEnabled()
+                        && ownUser.getUserSettings().shouldEmailUpdatesForWorkOrders())
+                .collect(Collectors.toList());
+        notificationService.createMultiple(admins.stream().map(admin -> new Notification(
+                messageSource.getMessage("complete_work_order_content",
+                        new String[]{patchedWorkOrder.getTitle(), user.getFullName()}, Helper.getLocale(admin)),
+                admin, NotificationType.WORK_ORDER, id)).collect(Collectors.toList()), true,
+                messageSource.getMessage("complete_work_order", null, Helper.getLocale(user)));
+    }
+
+    /**
+     * Runs the configured WORK_ORDER_CLOSED workflows and mobile review eligibility after an official
+     * closure. Shared with {@link WorkOrderVerificationService} so both the direct VERIFIED -> CLOSED
+     * edge and supervisor approval execute identical closure side effects.
+     */
+    public void runOfficialClosure(WorkOrder patchedWorkOrder, User user, String platform) {
+        Collection<Workflow> workflows = workflowService.findByMainConditionAndCompany(
+                WFMainCondition.WORK_ORDER_CLOSED, user.getCompany().getId());
+        workflows.forEach(workflow -> workflowService.runWorkOrder(workflow, patchedWorkOrder));
+        if ("ios".equalsIgnoreCase(platform) || "android".equalsIgnoreCase(platform)) {
+            reviewEligibilityService.incrementWorkOrder(reviewEligibilityService.getOrCreate(user));
+        }
+    }
+
+    private void notifyRequesterOfStatusChange(WorkOrder patchedWorkOrder, User user) {
+        Long id = patchedWorkOrder.getId();
+        Long requesterId = patchedWorkOrder.getParentRequest().getCreatedBy();
+        String requesterEmail = null;
+        User requester = null;
+        if (requesterId == null) {
+            String contact = patchedWorkOrder.getParentRequest().getContact();
+            if (contact != null && Helper.isValidEmailAddress(contact)) {
+                requesterEmail = contact;
             }
-            if (user.getCompany().getCompanySettings().getGeneralPreferences().isWoUpdateForRequesters()
-                    && savedWorkOrderStatusBefore != patchedWorkOrder.getStatus()
-                    && patchedWorkOrder.getParentRequest() != null) {
-                Long requesterId = patchedWorkOrder.getParentRequest().getCreatedBy();
-                String requesterEmail = null;
-                User requester = null;
-                if (requesterId == null) {
-                    String contact = patchedWorkOrder.getParentRequest().getContact();
-                    if (contact != null && Helper.isValidEmailAddress(contact)) {
-                        requesterEmail = contact;
-                    }
-                } else {
-                    requester = userService.findById(requesterId).get();
-                    requesterEmail = requester.getEmail();
-                }
-                Locale locale = Helper.getLocale(user);
-                String message = messageSource.getMessage("notification_wo_request",
-                        new Object[]{patchedWorkOrder.getTitle(),
-                                messageSource.getMessage(patchedWorkOrder.getStatus().toString(), null, locale)},
-                        locale);
-                if (requester != null) {
-                    notificationService.create(new Notification(message, requester,
-                            NotificationType.WORK_ORDER, id));
-                }
-                if ((requester != null && requester.getUserSettings().shouldEmailUpdatesForRequests() && requester.isEnabled()) || requesterEmail != null) {
-                    Map<String, Object> mailVariables = new HashMap<String, Object>() {{
-                        put("workOrderLink", frontendUrl + "/app/work-orders/" + id);
-                        put("message", message);
-                    }};
-                    mailServiceFactory.getMailService().sendMessageUsingThymeleafTemplate(new String[]{requesterEmail},
-                            messageSource.getMessage("request_update", null, locale), mailVariables, "requester" +
-                                    "-update.html", Helper.getLocale(user), null);
-                }
-            }
-            return patchedWorkOrder;
-        } else throw new CustomException("Forbidden", HttpStatus.FORBIDDEN);
+        } else {
+            requester = userService.findById(requesterId).orElse(null);
+            requesterEmail = requester != null ? requester.getEmail() : null;
+        }
+        Locale locale = Helper.getLocale(user);
+        String message = messageSource.getMessage("notification_wo_request",
+                new Object[]{patchedWorkOrder.getTitle(),
+                        messageSource.getMessage(patchedWorkOrder.getStatus().toString(), null, locale)}, locale);
+        if (requester != null) {
+            notificationService.create(new Notification(message, requester, NotificationType.WORK_ORDER, id));
+        }
+        if ((requester != null && requester.getUserSettings().shouldEmailUpdatesForRequests()
+                && requester.isEnabled()) || requesterEmail != null) {
+            Map<String, Object> mailVariables = new HashMap<String, Object>() {{
+                put("workOrderLink", frontendUrl + "/app/work-orders/" + id);
+                put("message", message);
+            }};
+            mailServiceFactory.getMailService().sendMessageUsingThymeleafTemplate(new String[]{requesterEmail},
+                    messageSource.getMessage("request_update", null, locale), mailVariables,
+                    "requester-update.html", Helper.getLocale(user), null);
+        }
     }
 
     public void generatePdfStream(Long id, User user, ReportConfig config, OutputStream outputStream) {

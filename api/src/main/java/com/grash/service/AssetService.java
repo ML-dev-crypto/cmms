@@ -66,6 +66,8 @@ public class AssetService {
     private final RequestPortalService requestPortalService;
     private WebhookDispatchService webhookDispatchService;
     private final CustomFieldValueService customFieldValueService;
+    private final DepartmentService departmentService;
+    private final DataScopeService dataScopeService;
 
     @Autowired
     public void setDeps(@Lazy LocationService locationService, @Lazy LaborService laborService,
@@ -100,6 +102,11 @@ public class AssetService {
                     .orElseThrow(() -> new CustomException("Parent asset not found", HttpStatus.NOT_FOUND))
                     .getLocation());
         }
+        normalizeAssetTag(asset, company, null);
+        resolveDepartment(asset, user);
+        validateDepartmentHospital(asset.getLocation(), asset.getDepartment());
+        // The QR token is always server generated: a client must never choose the payload.
+        asset.setQrToken(generateQrToken(company.getId()));
         Sanitizer.sanitizeAsset(asset);
         Asset savedAsset = assetRepository.saveAndFlush(asset);
         em.refresh(savedAsset);
@@ -128,6 +135,118 @@ public class AssetService {
         );
     }
 
+    private void normalizeAssetTag(Asset asset, Company company, Long currentId) {
+        String tag = asset.getAssetTag();
+        if (tag == null || tag.isBlank()) {
+            asset.setAssetTag(null);
+            return;
+        }
+        tag = Sanitizer.cleanText(tag).trim();
+        if (tag.isEmpty()) {
+            asset.setAssetTag(null);
+            return;
+        }
+        final String normalizedTag = tag;
+        assetRepository.findByAssetTagIgnoreCaseAndCompany_Id(normalizedTag, company.getId())
+                .filter(existing -> currentId == null || !existing.getId().equals(currentId))
+                .ifPresent(existing -> {
+                    throw new CustomException("Asset with same tag exists", HttpStatus.NOT_ACCEPTABLE);
+                });
+        asset.setAssetTag(normalizedTag);
+    }
+
+    private void normalizeAssetTagForPatch(AssetPatchDTO asset, Company company, Long currentId) {
+        String tag = asset.getAssetTag();
+        if (tag == null) {
+            return;
+        }
+        if (tag.isBlank()) {
+            asset.setAssetTag(null);
+            return;
+        }
+        tag = Sanitizer.cleanText(tag).trim();
+        final String normalizedTag = tag;
+        assetRepository.findByAssetTagIgnoreCaseAndCompany_Id(normalizedTag, company.getId())
+                .filter(existing -> !existing.getId().equals(currentId))
+                .ifPresent(existing -> {
+                    throw new CustomException("Asset with same tag exists", HttpStatus.NOT_ACCEPTABLE);
+                });
+        asset.setAssetTag(normalizedTag);
+    }
+
+    private void resolveDepartment(Asset asset, User user) {
+        Company company = user.getCompany();
+        if (asset.getLocation() != null && asset.getLocation().getId() != null) {
+            Location location = locationService.findByIdAndCompany(asset.getLocation().getId(), company.getId())
+                    .orElseThrow(() -> new CustomException("Location not found", HttpStatus.NOT_FOUND));
+            if (!dataScopeService.canAccessLocation(user, location)) {
+                throw new CustomException("Location is outside your data scope", HttpStatus.FORBIDDEN);
+            }
+            asset.setLocation(location);
+            if (asset.getDepartment() == null && location.getDepartment() != null) {
+                asset.setDepartment(location.getDepartment());
+            }
+        }
+        if (asset.getDepartment() != null && asset.getDepartment().getId() != null) {
+            Department department = departmentService.findByIdAndCompany(asset.getDepartment().getId(),
+                            company.getId())
+                    .orElseThrow(() -> new CustomException("Department not found", HttpStatus.NOT_FOUND));
+            if (!dataScopeService.canAccessDepartment(user, department)) {
+                throw new CustomException("Department is outside your data scope", HttpStatus.FORBIDDEN);
+            }
+            asset.setDepartment(department);
+        }
+    }
+
+    private void resolveLocationForPatch(AssetPatchDTO asset, User user) {
+        Long locationId = asset.getLocation().getId();
+        if (locationId == null) {
+            return;
+        }
+        Location location = locationService.findByIdAndCompany(locationId, user.getCompany().getId())
+                .orElseThrow(() -> new CustomException("Location not found", HttpStatus.NOT_FOUND));
+        if (!dataScopeService.canAccessLocation(user, location)) {
+            throw new CustomException("Location is outside your data scope", HttpStatus.FORBIDDEN);
+        }
+        asset.setLocation(location);
+    }
+
+    private void validateDepartmentHospital(Location location, Department department) {
+        if (location == null || department == null) {
+            return;
+        }
+        Hospital locationHospital = location.getHospital();
+        Hospital departmentHospital = department.getHospital();
+        if (locationHospital != null && departmentHospital != null
+                && !locationHospital.getId().equals(departmentHospital.getId())) {
+            throw new CustomException("Department does not belong to the location hospital",
+                    HttpStatus.NOT_ACCEPTABLE);
+        }
+    }
+
+    private void resolveDepartmentForPatch(AssetPatchDTO asset, User user) {
+        Long departmentId = asset.getDepartment().getId();
+        if (departmentId == null) {
+            return;
+        }
+        Department department = departmentService.findByIdAndCompany(departmentId, user.getCompany().getId())
+                .orElseThrow(() -> new CustomException("Department not found", HttpStatus.NOT_FOUND));
+        if (!dataScopeService.canAccessDepartment(user, department)) {
+            throw new CustomException("Department is outside your data scope", HttpStatus.FORBIDDEN);
+        }
+        asset.setDepartment(department);
+    }
+
+    private String generateQrToken(Long companyId) {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            String token = UUID.randomUUID().toString().replace("-", "");
+            if (!assetRepository.existsByQrTokenAndCompany_Id(token, companyId)) {
+                return token;
+            }
+        }
+        throw new CustomException("Could not generate a unique QR token", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
     @Transactional
     protected Asset update(Long id, AssetPatchDTO asset, Company company) {
         if (asset.getParentAsset() != null && !licenseService.hasEntitlement(LicenseEntitlement.ASSET_HIERARCHY))
@@ -140,6 +259,7 @@ public class AssetService {
                 setAssetCustomFields(savedAsset, asset.getCustomFields(), company);
             }
             Asset patchedAsset = assetMapper.updateAsset(savedAsset, asset);
+            validateDepartmentHospital(patchedAsset.getLocation(), patchedAsset.getDepartment());
             Sanitizer.sanitizeAsset(patchedAsset);
             patchedAsset = assetRepository.saveAndFlush(patchedAsset);
             em.refresh(patchedAsset);
@@ -321,6 +441,7 @@ public class AssetService {
                 if (!canViewOthers) {
                     searchCriteria.filterCreatedBy(user);
                 }
+                dataScopeService.applyAssetScope(user, searchCriteria);
             } else throw new CustomException("Access Denied", HttpStatus.FORBIDDEN);
         }
         return searchCriteria;
@@ -340,9 +461,29 @@ public class AssetService {
 
     public Asset checkAccessToAssetId(Long assetId, User user) {
         Asset asset = findById(assetId).orElseThrow(() -> new CustomException("Not found", HttpStatus.NOT_FOUND));
-        if (!asset.canBeViewedBy(user))
+        if (!asset.canBeViewedBy(user) || !dataScopeService.canAccessAsset(user, asset))
             throw new CustomException("Access denied", HttpStatus.FORBIDDEN);
         return asset;
+    }
+
+    public Asset getByQrToken(String qrToken, User user) {
+        if (!licenseService.hasEntitlement(LicenseEntitlement.NFC_BARCODE))
+            throw new CustomException("You need a license to scan an asset", HttpStatus.FORBIDDEN);
+        Asset asset = assetRepository.findByQrTokenAndCompany_Id(qrToken, user.getCompany().getId())
+                .orElseThrow(() -> new CustomException("Asset not found", HttpStatus.NOT_FOUND));
+        if (!asset.canBeViewedBy(user) || !dataScopeService.canAccessAsset(user, asset))
+            throw new CustomException("Access denied", HttpStatus.FORBIDDEN);
+        return asset;
+    }
+
+    @Transactional
+    public Asset rotateQrToken(Long id, User user) {
+        Asset asset = checkAccessToAssetId(id, user);
+        if (!asset.canBeEditedBy(user)) {
+            throw new CustomException("Access denied", HttpStatus.FORBIDDEN);
+        }
+        asset.setQrToken(generateQrToken(user.getCompany().getId()));
+        return assetRepository.saveAndFlush(asset);
     }
 
     public Collection<Asset> findByLocationAndUser(Long locationId, User user) {
@@ -421,10 +562,25 @@ public class AssetService {
             Asset savedAsset = optionalAsset.get();
             em.detach(savedAsset);
             if (savedAsset.canBeEditedBy(user)) {
-                if (!asset.getStatus().isReallyDown() && savedAsset.getStatus().isReallyDown()) {
-                    stopDownTime(savedAsset.getId(), Helper.getLocale(user));
-                } else if (asset.getStatus().isReallyDown() && !savedAsset.getStatus().isReallyDown()) {
-                    triggerDownTime(savedAsset.getId(), Helper.getLocale(user), asset.getStatus());
+                if (!dataScopeService.canAccessAsset(user, savedAsset)) {
+                    throw new CustomException("Asset is outside your data scope", HttpStatus.FORBIDDEN);
+                }
+                if (asset.getAssetTag() != null) {
+                    normalizeAssetTagForPatch(asset, user.getCompany(), id);
+                }
+                if (asset.getLocation() != null) {
+                    resolveLocationForPatch(asset, user);
+                }
+                if (asset.getDepartment() != null) {
+                    resolveDepartmentForPatch(asset, user);
+                }
+                if (asset.getStatus() != null) {
+                    boolean savedDown = savedAsset.getStatus() != null && savedAsset.getStatus().isReallyDown();
+                    if (!asset.getStatus().isReallyDown() && savedDown) {
+                        stopDownTime(savedAsset.getId(), Helper.getLocale(user));
+                    } else if (asset.getStatus().isReallyDown() && !savedDown) {
+                        triggerDownTime(savedAsset.getId(), Helper.getLocale(user), asset.getStatus());
+                    }
                 }
                 if (asset.getBarCode() != null) {
                     Optional<Asset> optionalAssetWithSameBarCode =
@@ -450,10 +606,13 @@ public class AssetService {
     }
 
     public List<Asset> findMini(Long locationId, User user) {
-        if (locationId == null) {
-            return findByCompany(user.getCompany().getId());
+        List<Asset> assets = locationId == null
+                ? findByCompany(user.getCompany().getId())
+                : findByLocation(locationId);
+        if (!dataScopeService.isRestricted(user)) {
+            return assets;
         }
-        return findByLocation(locationId);
+        return assets.stream().filter(asset -> dataScopeService.canAccessAsset(user, asset)).toList();
     }
 
     public List<Asset> findMiniPublic(String portalUUID, Long locationId, String clientIp) {
@@ -477,7 +636,7 @@ public class AssetService {
         Optional<Asset> optionalAsset = findById(id);
         if (optionalAsset.isPresent()) {
             Asset savedAsset = optionalAsset.get();
-            if (savedAsset.canBeDeletedBy(user)) {
+            if (savedAsset.canBeDeletedBy(user) && dataScopeService.canAccessAsset(user, savedAsset)) {
                 delete(id);
             } else throw new CustomException("Forbidden", HttpStatus.FORBIDDEN);
         } else throw new CustomException("Asset not found", HttpStatus.NOT_FOUND);

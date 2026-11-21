@@ -38,6 +38,12 @@ public interface LocationRepository extends JpaRepository<Location, Long>, JpaSp
 
     int countByParentLocation_Id(Long locationId);
 
+    long countByDepartment_Id(Long departmentId);
+
+    List<Location> findByDepartment_Id(Long departmentId);
+
+    List<Location> findByHospital_Id(Long hospitalId);
+
     void deleteByCompany_IdAndIsDemoTrue(Long companyId);
 
     @Query("SELECT CASE WHEN COUNT(l) > :threshold THEN true ELSE false END " +

@@ -84,8 +84,23 @@ const AssetDetails = ({ asset, loading, onCopy }: PropsType) => {
   const dispatch = useDispatch();
   const informationFields = [
     { label: t('name'), value: asset?.name },
+    { label: t('asset_tag'), value: asset?.assetTag },
     { label: t('description'), value: asset?.description },
     { label: t('category'), value: asset?.category?.name },
+    { label: t('department'), value: asset?.department?.name },
+    { label: t('criticality'), value: asset?.criticality ? t(`criticality_${asset.criticality.toLowerCase()}`) : null },
+    {
+      label: t('equipment_type'),
+      value: asset?.equipmentType
+        ? t(`equipment_type_${asset.equipmentType.toLowerCase()}`)
+        : null
+    },
+    {
+      label: t('clinical_impact'),
+      value: asset?.clinicalImpact
+        ? t(`clinical_impact_${asset.clinicalImpact.toLowerCase()}`)
+        : null
+    },
     { label: t('model'), value: asset?.model },
     { label: t('serial_number'), value: asset?.serialNumber },
     { label: t('power'), value: asset?.power },
@@ -97,7 +112,7 @@ const AssetDetails = ({ asset, loading, onCopy }: PropsType) => {
         : null
     },
     { label: t('area'), value: asset?.area },
-    { label: t('barcode'), value: asset?.barCode, barcode: true }
+    { label: t('barcode'), value: asset?.barCode }
   ];
   const moreInfosFields = [
     {
@@ -251,6 +266,29 @@ const AssetDetails = ({ asset, loading, onCopy }: PropsType) => {
               {informationFields.map((field) => (
                 <BasicField key={field.label} {...field} />
               ))}
+              {asset?.qrToken && (
+                <Grid item xs={12}>
+                  <Stack spacing={5} direction="row">
+                    <Typography variant="h6" fontWeight="bold">
+                      {t('asset_qr_code')}
+                    </Typography>
+                    <Box>
+                      <QRCodeSVG
+                        id={`qr-code-${asset.qrToken}`}
+                        value={asset.qrToken}
+                        size={120}
+                        level="H"
+                        onClick={() => downloadQRCode(asset.qrToken)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <Typography variant="body2" color="text.secondary">
+                        {t('asset_qr_code_description')}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                  <Divider sx={{ mt: 1 }} />
+                </Grid>
+              )}
               <Grid item xs={12}>
                 <Typography variant="h3">{t('more_informations')}</Typography>
               </Grid>

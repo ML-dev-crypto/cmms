@@ -88,6 +88,10 @@ class AssetServiceTest {
     private WorkOrderService workOrderService;
     @Mock
     private WebhookDispatchService webhookDispatchService;
+    @Mock
+    private DepartmentService departmentService;
+    @Mock
+    private DataScopeService dataScopeService;
 
     private Company company;
     private User user;
@@ -103,6 +107,11 @@ class AssetServiceTest {
         ReflectionTestUtils.setField(assetService, "laborService", laborService);
         ReflectionTestUtils.setField(assetService, "workOrderService", workOrderService);
         ReflectionTestUtils.setField(assetService, "webhookDispatchService", webhookDispatchService);
+        lenient().when(dataScopeService.isRestricted(any())).thenReturn(false);
+        lenient().when(dataScopeService.canAccessAsset(any(), any())).thenReturn(true);
+        lenient().when(dataScopeService.canAccessLocation(any(), any())).thenReturn(true);
+        lenient().when(dataScopeService.canAccessDepartment(any(), any())).thenReturn(true);
+        lenient().when(dataScopeService.canAccessHospital(any(), any())).thenReturn(true);
 
         subscriptionPlan = SubscriptionPlan.builder()
                 .id(1L)
@@ -188,6 +197,26 @@ class AssetServiceTest {
         a.setAssignedTo(new ArrayList<>());
         a.setStatus(AssetStatus.OPERATIONAL);
         return a;
+    }
+
+    private Hospital hospital(Long id) {
+        Hospital hospital = new Hospital();
+        hospital.setId(id);
+        return hospital;
+    }
+
+    private Department departmentInHospital(Long hospitalId) {
+        Department department = new Department();
+        department.setId(hospitalId == 1L ? 1L : 2L);
+        department.setHospital(hospital(hospitalId));
+        return department;
+    }
+
+    private Location locationInHospital(Long hospitalId) {
+        Location location = new Location();
+        location.setId(hospitalId == 1L ? 1L : 5L);
+        location.setHospital(hospital(hospitalId));
+        return location;
     }
 
     private AssetPatchDTO buildPatchDTO() {
@@ -363,6 +392,7 @@ class AssetServiceTest {
             stubAssetLimit(false, false);
             when(licenseService.hasEntitlement(LicenseEntitlement.ASSET_HIERARCHY)).thenReturn(true);
             when(assetRepository.findById(2L)).thenReturn(Optional.of(parent));
+            when(locationService.findByIdAndCompany(10L, 1L)).thenReturn(Optional.of(parentLocation));
             stubCreatePipeline(1L);
 
             Asset result = assetService.create(asset, user);
@@ -384,6 +414,7 @@ class AssetServiceTest {
             asset.setLocation(existingLocation);
             stubAssetLimit(false, false);
             when(licenseService.hasEntitlement(LicenseEntitlement.ASSET_HIERARCHY)).thenReturn(true);
+            when(locationService.findByIdAndCompany(20L, 1L)).thenReturn(Optional.of(existingLocation));
             stubCreatePipeline(1L);
 
             Asset result = assetService.create(asset, user);
@@ -677,6 +708,46 @@ class AssetServiceTest {
             CustomException ex = assertThrows(CustomException.class, () -> assetService.patch(1L, dto, user));
 
             assertEquals(HttpStatus.NOT_ACCEPTABLE, ex.getHttpStatus());
+        }
+
+        @Test
+        void crossHospitalDepartmentOnPatch_throwsNotAcceptable() {
+            Asset saved = buildAsset(1L);
+            saved.setLocation(locationInHospital(1L));
+            saved.setDepartment(departmentInHospital(1L));
+            AssetPatchDTO dto = buildPatchDTO();
+            dto.setDepartment(departmentInHospital(2L));
+            when(assetRepository.findById(1L)).thenReturn(Optional.of(saved));
+            when(departmentService.findByIdAndCompany(2L, 1L)).thenReturn(Optional.of(dto.getDepartment()));
+            when(assetRepository.existsById(1L)).thenReturn(true);
+            when(assetMapper.updateAsset(any(Asset.class), any(AssetPatchDTO.class))).thenAnswer(inv -> {
+                Asset target = inv.getArgument(0);
+                target.setDepartment(dto.getDepartment());
+                return target;
+            });
+
+            CustomException ex = assertThrows(CustomException.class, () -> assetService.patch(1L, dto, user));
+
+            assertEquals(HttpStatus.NOT_ACCEPTABLE, ex.getHttpStatus());
+            assertEquals("Department does not belong to the location hospital", ex.getMessage());
+            verify(assetRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        void outOfScopeLocationOnPatch_throwsForbidden() {
+            Asset saved = buildAsset(1L);
+            AssetPatchDTO dto = buildPatchDTO();
+            Location location = locationInHospital(2L);
+            dto.setLocation(location);
+            when(assetRepository.findById(1L)).thenReturn(Optional.of(saved));
+            when(locationService.findByIdAndCompany(5L, 1L)).thenReturn(Optional.of(location));
+            when(dataScopeService.canAccessLocation(user, location)).thenReturn(false);
+
+            CustomException ex = assertThrows(CustomException.class, () -> assetService.patch(1L, dto, user));
+
+            assertEquals(HttpStatus.FORBIDDEN, ex.getHttpStatus());
+            assertEquals("Location is outside your data scope", ex.getMessage());
+            verify(assetRepository, never()).saveAndFlush(any());
         }
 
         @Test

@@ -18,6 +18,9 @@ public class TaskBaseShowDTO extends AuditShowDTO {
     @Schema(description = "Type of task")
     private TaskType taskType;
 
+    @Schema(description = "Whether this checklist item is mandatory before verification approval")
+    private boolean required;
+
     @Schema(description = "List of task options")
     private List<TaskOptionShowDTO> options = new ArrayList<>();
 

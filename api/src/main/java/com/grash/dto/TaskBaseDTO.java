@@ -23,6 +23,9 @@ public class TaskBaseDTO {
     @Schema(description = "Type of task")
     private TaskType taskType = TaskType.SUBTASK;
 
+    @Schema(description = "Whether this checklist item is mandatory before verification approval")
+    private boolean required;
+
     @Schema(description = "Assigned user")
     private User user;
 

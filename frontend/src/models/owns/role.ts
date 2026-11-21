@@ -12,7 +12,8 @@ export enum PermissionEntity {
   LOCATIONS = 'LOCATIONS',
   SETTINGS = 'SETTINGS',
   REQUESTS = 'REQUESTS',
-  ANALYTICS = 'ANALYTICS'
+  ANALYTICS = 'ANALYTICS',
+  HOSPITALS_AND_DEPARTMENTS = 'HOSPITALS_AND_DEPARTMENTS'
 }
 export type PermissionRoot =
   | 'createPermissions'

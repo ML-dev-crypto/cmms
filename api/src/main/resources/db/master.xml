@@ -241,4 +241,10 @@
              relativeToChangelogFile="true"/>
     <include file="changelog/2026_09_09_1788956680_user_settings_language.xml"
              relativeToChangelogFile="true"/>
+    <include file="changelog/2026_11_19_00000000001_hospital_departments_asset_metadata.xml"
+             relativeToChangelogFile="true"/>
+    <include file="changelog/2026_11_19_00000000002_work_order_lifecycle.xml"
+             relativeToChangelogFile="true"/>
+    <include file="changelog/2026_11_20_00000000001_work_order_verification.xml"
+             relativeToChangelogFile="true"/>
 </databaseChangeLog>

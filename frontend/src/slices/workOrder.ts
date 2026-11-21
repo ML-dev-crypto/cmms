@@ -2,6 +2,14 @@ import type { PayloadAction } from '@reduxjs/toolkit';
 import { createSlice } from '@reduxjs/toolkit';
 import type { AppThunk } from 'src/store';
 import WorkOrder from '../models/owns/workOrder';
+import type {
+  WorkOrderLifecycle,
+  WorkOrderTransition,
+  WorkOrderTransitionRequest,
+  WorkOrderVerificationDecisionRequest,
+  WorkOrderVerificationDetail,
+  WorkOrderVerificationQueueItem
+} from '../models/owns/workOrder';
 import api from '../utils/api';
 import { Task } from '../models/owns/tasks';
 import {
@@ -38,6 +46,11 @@ interface WorkOrderState {
   singleWorkOrder: WorkOrder;
   urgentCount: number;
   loadingGet: boolean;
+  lifecycleByWorkOrder: { [key: number]: WorkOrderLifecycle };
+  transitionsByWorkOrder: { [key: number]: WorkOrderTransition[] };
+  verificationByWorkOrder: { [key: number]: WorkOrderVerificationDetail };
+  verificationQueue: WorkOrderVerificationQueueItem[];
+  verificationCount: number;
   calendar: {
     events: CalendarEvent<WorkOrder | PreventiveMaintenance>[];
   };
@@ -50,6 +63,11 @@ const initialState: WorkOrderState = {
   singleWorkOrder: null,
   urgentCount: 0,
   loadingGet: false,
+  lifecycleByWorkOrder: {},
+  transitionsByWorkOrder: {},
+  verificationByWorkOrder: {},
+  verificationQueue: [],
+  verificationCount: 0,
   workOrdersMini: getInitialPage<WorkOrderBaseMiniDTO>(),
   calendar: {
     events: []
@@ -207,6 +225,40 @@ const slice = createSlice({
     },
     decrementUrgentCount(state: WorkOrderState) {
       state.urgentCount = Math.max(0, state.urgentCount - 1);
+    },
+    getWorkOrderLifecycle(
+      state: WorkOrderState,
+      action: PayloadAction<{ lifecycle: WorkOrderLifecycle; id: number }>
+    ) {
+      const { lifecycle, id } = action.payload;
+      state.lifecycleByWorkOrder[id] = lifecycle;
+    },
+    getWorkOrderTransitionHistory(
+      state: WorkOrderState,
+      action: PayloadAction<{ transitions: WorkOrderTransition[]; id: number }>
+    ) {
+      const { transitions, id } = action.payload;
+      state.transitionsByWorkOrder[id] = transitions;
+    },
+    getWorkOrderVerification(
+      state: WorkOrderState,
+      action: PayloadAction<{ verification: WorkOrderVerificationDetail; id: number }>
+    ) {
+      const { verification, id } = action.payload;
+      state.verificationByWorkOrder[id] = verification;
+    },
+    getWorkOrderVerificationQueue(
+      state: WorkOrderState,
+      action: PayloadAction<{ queue: WorkOrderVerificationQueueItem[] }>
+    ) {
+      state.verificationQueue = action.payload.queue;
+      state.verificationCount = action.payload.queue.length;
+    },
+    getWorkOrderVerificationCount(
+      state: WorkOrderState,
+      action: PayloadAction<{ count: number }>
+    ) {
+      state.verificationCount = action.payload.count;
     }
   }
 });
@@ -351,6 +403,125 @@ export const changeWorkOrderStatus =
     else if (!wasUrgent && isNowUrgent)
       dispatch(slice.actions.incrementUrgentCount());
   };
+export const getWorkOrderLifecycle =
+  (id: number): AppThunk =>
+  async (dispatch) => {
+    const lifecycle = await api.get<WorkOrderLifecycle>(
+      `${basePath}/${id}/lifecycle`
+    );
+    dispatch(slice.actions.getWorkOrderLifecycle({ lifecycle, id }));
+    return lifecycle;
+  };
+export const getWorkOrderTransitionHistory =
+  (id: number): AppThunk =>
+  async (dispatch) => {
+    const transitions = await api.get<WorkOrderTransition[]>(
+      `${basePath}/${id}/lifecycle/history`
+    );
+    dispatch(slice.actions.getWorkOrderTransitionHistory({ transitions, id }));
+    return transitions;
+  };
+export const requestWorkOrderTransition =
+  (id: number, request: WorkOrderTransitionRequest): AppThunk =>
+  async (dispatch, getState) => {
+    const oldWorkOrder = findWorkOrder(getState().workOrders, id);
+    const workOrderResponse = await api.post<WorkOrder>(
+      `${basePath}/${id}/lifecycle/transitions`,
+      request
+    );
+    dispatch(slice.actions.editWorkOrder({ workOrder: workOrderResponse }));
+    const wasUrgent = isUrgent(oldWorkOrder);
+    const isNowUrgent = isUrgent(workOrderResponse);
+    if (wasUrgent && !isNowUrgent)
+      dispatch(slice.actions.decrementUrgentCount());
+    else if (!wasUrgent && isNowUrgent)
+      dispatch(slice.actions.incrementUrgentCount());
+    return workOrderResponse;
+  };
+
+export const getWorkOrderVerification =
+  (id: number): AppThunk =>
+  async (dispatch) => {
+    const verification = await api.get<WorkOrderVerificationDetail>(
+      `${basePath}/${id}/verification`
+    );
+    dispatch(slice.actions.getWorkOrderVerification({ verification, id }));
+    return verification;
+  };
+
+export const getWorkOrderVerificationQueue =
+  (assignedToMe = false): AppThunk =>
+  async (dispatch) => {
+    const queue = await api.get<WorkOrderVerificationQueueItem[]>(
+      `${basePath}/verification/queue?assignedToMe=${assignedToMe}`
+    );
+    dispatch(slice.actions.getWorkOrderVerificationQueue({ queue }));
+    return queue;
+  };
+
+export const getWorkOrderVerificationCount =
+  (assignedToMe = false): AppThunk =>
+  async (dispatch) => {
+    const response = await api.get<{ count: number }>(
+      `${basePath}/verification/count?assignedToMe=${assignedToMe}`
+    );
+    dispatch(slice.actions.getWorkOrderVerificationCount({ count: response.count }));
+    return response.count;
+  };
+
+export const assignWorkOrderVerifier =
+  (id: number, verifierId: number | null): AppThunk =>
+  async (dispatch) => {
+    const verification = await api.put<WorkOrderVerificationDetail>(
+      `${basePath}/${id}/verification/verifier`,
+      { verifierId }
+    );
+    dispatch(slice.actions.getWorkOrderVerification({ verification, id }));
+    if (verification.workOrder)
+      dispatch(
+        slice.actions.editWorkOrder({ workOrder: verification.workOrder })
+      );
+    return verification;
+  };
+
+export const approveWorkOrderVerification =
+  (id: number, request: WorkOrderVerificationDecisionRequest): AppThunk =>
+  async (dispatch) => {
+    const verification = await api.post<WorkOrderVerificationDetail>(
+      `${basePath}/${id}/verification/approve`,
+      request
+    );
+    dispatch(slice.actions.getWorkOrderVerification({ verification, id }));
+    if (verification.workOrder)
+      dispatch(
+        slice.actions.editWorkOrder({ workOrder: verification.workOrder })
+      );
+    await Promise.all([
+      dispatch(getWorkOrderLifecycle(id)),
+      dispatch(getWorkOrderTransitionHistory(id))
+    ]);
+    return verification;
+  };
+
+export const rejectWorkOrderVerification =
+  (id: number, request: WorkOrderVerificationDecisionRequest): AppThunk =>
+  async (dispatch) => {
+    const verification = await api.post<WorkOrderVerificationDetail>(
+      `${basePath}/${id}/verification/reject`,
+      request
+    );
+    dispatch(slice.actions.getWorkOrderVerification({ verification, id }));
+    if (verification.workOrder)
+      dispatch(
+        slice.actions.editWorkOrder({ workOrder: verification.workOrder })
+      );
+    await Promise.all([
+      dispatch(getWorkOrderLifecycle(id)),
+      dispatch(getWorkOrderTransitionHistory(id))
+    ]);
+    return verification;
+  };
+
 export const deleteWorkOrder =
   (id: number): AppThunk =>
   async (dispatch, getState) => {

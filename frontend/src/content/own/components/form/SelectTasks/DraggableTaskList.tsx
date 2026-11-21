@@ -25,6 +25,7 @@ export type DraggableListProps = {
   onRemove: (id: number) => void;
   onUserChange: (user: UserMiniDTO, id: number) => void;
   onChoicesChange: (choices: string[], id: number) => void;
+  onRequiredChange: (required: boolean, id: number) => void;
 };
 
 const DraggableTaskList = React.memo(
@@ -37,7 +38,8 @@ const DraggableTaskList = React.memo(
     onUserChange,
     onAssetChange,
     onChoicesChange,
-    onMeterChange
+    onMeterChange,
+    onRequiredChange
   }: DraggableListProps) => {
     const { usersMini } = useSelector((state) => state.users);
     const { assetsMini } = useSelector((state) => state.assets);
@@ -71,6 +73,7 @@ const DraggableTaskList = React.memo(
                   onAssetChange={onAssetChange}
                   onMeterChange={onMeterChange}
                   onChoicesChange={onChoicesChange}
+                  onRequiredChange={onRequiredChange}
                   assetsMini={assetsMini}
                   usersMini={usersMini}
                   metersMini={metersMini}

@@ -54,7 +54,8 @@ function PermissionsMatrix({
       LOCATIONS: t('locations'),
       SETTINGS: t('settings'),
       REQUESTS: 'Requests',
-      ANALYTICS: 'Analytics'
+      ANALYTICS: 'Analytics',
+      HOSPITALS_AND_DEPARTMENTS: t('hospitals_and_departments')
     };
     return labels[entity] || entity;
   };

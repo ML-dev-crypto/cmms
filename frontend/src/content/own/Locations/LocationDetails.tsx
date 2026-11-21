@@ -187,6 +187,27 @@ export default function LocationDetails(props: LocationDetailsProps) {
         <Box>
           <Typography variant="h2">{location?.name}</Typography>
           <Typography variant="h6">{location?.address}</Typography>
+          {location?.hospital && (
+            <Typography variant="subtitle1">
+              {t('hospital')}: {location.hospital.name}
+            </Typography>
+          )}
+          {location?.department && (
+            <Typography variant="subtitle1">
+              {t('department')}: {location.department.name}
+            </Typography>
+          )}
+          {(location?.building || location?.floor || location?.room) && (
+            <Typography variant="subtitle1">
+              {[
+                location?.building && `${t('building')}: ${location.building}`,
+                location?.floor && `${t('floor')}: ${location.floor}`,
+                location?.room && `${t('room')}: ${location.room}`
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Typography>
+          )}
         </Box>
         <Box>
           {hasEditPermission(PermissionEntity.LOCATIONS, location) && (

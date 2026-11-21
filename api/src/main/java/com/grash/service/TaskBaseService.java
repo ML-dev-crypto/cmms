@@ -43,6 +43,7 @@ public class TaskBaseService {
         TaskBase taskBase = TaskBase.builder()
                 .label(taskBaseDTO.getLabel())
                 .taskType(taskBaseDTO.getTaskType())
+                .required(taskBaseDTO.isRequired())
                 .build();
         if (taskBaseDTO.getUser() != null) {
             userService.findById(taskBaseDTO.getUser().getId()).ifPresent(taskBase::setUser);

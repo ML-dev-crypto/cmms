@@ -599,6 +599,76 @@ function Assets() {
       midWidth: true
     },
     {
+      name: 'assetTag',
+      type: 'text',
+      label: t('asset_tag'),
+      placeholder: t('asset_tag'),
+      midWidth: true
+    },
+    {
+      name: 'department',
+      type: 'select',
+      type2: 'department',
+      label: t('department'),
+      placeholder: t('select_department'),
+      midWidth: true
+    },
+    {
+      name: 'criticality',
+      type: 'select',
+      label: t('criticality'),
+      placeholder: t('select_criticality'),
+      midWidth: true,
+      items: [
+        { label: t('criticality_critical'), value: 'CRITICAL' },
+        { label: t('criticality_high'), value: 'HIGH' },
+        { label: t('criticality_medium'), value: 'MEDIUM' },
+        { label: t('criticality_low'), value: 'LOW' }
+      ]
+    },
+    {
+      name: 'equipmentType',
+      type: 'select',
+      label: t('equipment_type'),
+      placeholder: t('select_equipment_type'),
+      midWidth: true,
+      items: [
+        { label: t('equipment_type_medical_equipment'), value: 'MEDICAL_EQUIPMENT' },
+        { label: t('equipment_type_laboratory'), value: 'LABORATORY' },
+        { label: t('equipment_type_imaging'), value: 'IMAGING' },
+        { label: t('equipment_type_surgical'), value: 'SURGICAL' },
+        { label: t('equipment_type_life_support'), value: 'LIFE_SUPPORT' },
+        { label: t('equipment_type_utility'), value: 'UTILITY' },
+        { label: t('equipment_type_hvac'), value: 'HVAC' },
+        { label: t('equipment_type_electrical'), value: 'ELECTRICAL' },
+        { label: t('equipment_type_plumbing'), value: 'PLUMBING' },
+        { label: t('equipment_type_lift'), value: 'LIFT' },
+        { label: t('equipment_type_fire_safety'), value: 'FIRE_SAFETY' },
+        { label: t('equipment_type_it'), value: 'IT' },
+        { label: t('equipment_type_furniture'), value: 'FURNITURE' },
+        { label: t('equipment_type_vehicle'), value: 'VEHICLE' },
+        { label: t('equipment_type_other'), value: 'OTHER' }
+      ]
+    },
+    {
+      name: 'clinicalImpact',
+      type: 'select',
+      label: t('clinical_impact'),
+      placeholder: t('select_clinical_impact'),
+      midWidth: true,
+      items: [
+        {
+          label: t('clinical_impact_direct_patient_care'),
+          value: 'DIRECT_PATIENT_CARE'
+        },
+        {
+          label: t('clinical_impact_indirect_patient_care'),
+          value: 'INDIRECT_PATIENT_CARE'
+        },
+        { label: t('clinical_impact_non_clinical'), value: 'NON_CLINICAL' }
+      ]
+    },
+    {
       name: 'acquisitionCost',
       type: 'number',
       label: t('acquisition_cost'),

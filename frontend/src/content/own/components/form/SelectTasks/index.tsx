@@ -157,6 +157,15 @@ export default function SelectTasks({
     });
     setTasks(newTasks);
   };
+  const onRequiredChange = (required: boolean, id: number) => {
+    const newTasks = tasks.map((task) => {
+      if (task.id === id) {
+        return { ...task, taskBase: { ...task.taskBase, required } };
+      }
+      return task;
+    });
+    setTasks(newTasks);
+  };
   const onSave = () => {
     if (tasks.some((task) => !task.taskBase.label)) {
       showError(t('remove_blank_tasks'));
@@ -351,6 +360,7 @@ export default function SelectTasks({
                       onAssetChange={onAssetChange}
                       onMeterChange={onMeterChange}
                       onChoicesChange={onChoicesChange}
+                      onRequiredChange={onRequiredChange}
                     />
                   </Grid>
                 </Grid>

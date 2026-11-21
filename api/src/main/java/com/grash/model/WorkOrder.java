@@ -5,6 +5,7 @@ import com.grash.dto.IdDTO;
 import com.grash.model.abstracts.WorkOrderBase;
 import com.grash.model.enums.PermissionEntity;
 import com.grash.model.enums.Status;
+import com.grash.model.enums.WorkOrderLifecycleState;
 import com.grash.utils.Helper;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -52,8 +53,32 @@ public class WorkOrder extends WorkOrderBase {
     @Schema(description = "The date and time when the work order was completed")
     private Date completedOn;
 
+    @Schema(description = "The supervisor assigned to verify the completed work", implementation = IdDTO.class)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "verifier_id")
+    @Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED, withModifiedFlag = true)
+    private User verifier;
+
+    @Schema(description = "The date and time when the work order was officially closed after verification")
+    @Audited(withModifiedFlag = true)
+    private Date closedOn;
+
+    @Schema(description = "The supervisor who officially closed the work order", implementation = IdDTO.class)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "closed_by_id")
+    @Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED, withModifiedFlag = true)
+    private User closedBy;
+
     @Schema(description = "The current status of the work order")
     private Status status = Status.OPEN;
+
+    @Schema(description = "Detailed lifecycle state of the work order. Read-only: use the lifecycle transition " +
+            "endpoints.", accessMode = Schema.AccessMode.READ_ONLY)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lifecycle_state", nullable = false, length = 32)
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    @Audited(withModifiedFlag = true)
+    private WorkOrderLifecycleState lifecycleState = WorkOrderLifecycleState.REPORTED;
 
     @Schema(description = "Signature captured upon work order completion")
     @Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED, withModifiedFlag = true)

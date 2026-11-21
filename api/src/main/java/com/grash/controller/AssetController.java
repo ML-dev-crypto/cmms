@@ -67,6 +67,13 @@ public class AssetController {
         return assetMapper.toMiniDto(assetService.getByBarcodeAndCompany(data, user));
     }
 
+    @GetMapping("/scan/{token}")
+    @PreAuthorize("hasRole('ROLE_CLIENT')")
+    public AssetShowDTO getByQrToken(@PathVariable String token,
+                                     @Parameter(hidden = true) @CurrentUser User user) {
+        return assetMapper.toShowDto(assetService.getByQrToken(token, user), assetService);
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("permitAll()")
     public AssetShowDTO getById(@PathVariable("id") Long id, HttpServletRequest req) {
@@ -140,6 +147,13 @@ public class AssetController {
                               HttpServletRequest req) {
         User user = userService.whoami(req);
         return assetMapper.toShowDto(assetService.patch(id, asset, user), assetService);
+    }
+
+    @PostMapping("/{id}/rotate-qr")
+    @PreAuthorize("hasRole('ROLE_CLIENT')")
+    public AssetShowDTO rotateQrToken(@PathVariable("id") Long id,
+                                      @Parameter(hidden = true) @CurrentUser User user) {
+        return assetMapper.toShowDto(assetService.rotateQrToken(id, user), assetService);
     }
 
     @GetMapping("/mini")

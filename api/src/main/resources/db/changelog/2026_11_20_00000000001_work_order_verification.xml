@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <changeSet id="2026_11_20_work_order_verification_00000000001" author="qoder">
+        <comment>Phase 4: verifier assignment and official closure columns on work order</comment>
+        <addColumn tableName="work_order">
+            <column name="verifier_id" type="BIGINT"/>
+            <column name="closed_on" type="TIMESTAMP"/>
+            <column name="closed_by_id" type="BIGINT"/>
+        </addColumn>
+        <addForeignKeyConstraint baseTableName="work_order" baseColumnNames="verifier_id"
+                                 constraintName="fk_work_order_verifier"
+                                 referencedTableName="own_user" referencedColumnNames="id"
+                                 onDelete="SET NULL"/>
+        <addForeignKeyConstraint baseTableName="work_order" baseColumnNames="closed_by_id"
+                                 constraintName="fk_work_order_closed_by"
+                                 referencedTableName="own_user" referencedColumnNames="id"
+                                 onDelete="SET NULL"/>
+        <createIndex tableName="work_order" indexName="idx_work_order_verifier">
+            <column name="verifier_id"/>
+        </createIndex>
+        <createIndex tableName="work_order" indexName="idx_work_order_closed_on">
+            <column name="closed_on"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="work_order" indexName="idx_work_order_closed_on"/>
+            <dropIndex tableName="work_order" indexName="idx_work_order_verifier"/>
+            <dropForeignKeyConstraint baseTableName="work_order" constraintName="fk_work_order_closed_by"/>
+            <dropForeignKeyConstraint baseTableName="work_order" constraintName="fk_work_order_verifier"/>
+            <dropColumn tableName="work_order" columnName="closed_by_id"/>
+            <dropColumn tableName="work_order" columnName="closed_on"/>
+            <dropColumn tableName="work_order" columnName="verifier_id"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_20_work_order_verification_00000000002" author="qoder">
+        <comment>Phase 4: mandatory checklist flag on task templates (default false keeps existing checklists unchanged)</comment>
+        <addColumn tableName="task_base">
+            <column name="required" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="task_base" columnName="required"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_20_work_order_verification_00000000003" author="qoder">
+        <comment>Phase 4: append-only supervisor verification records</comment>
+        <createTable tableName="work_order_verification">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" primaryKeyName="pk_work_order_verification" nullable="false"/>
+            </column>
+            <column name="work_order_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="verifier_id" type="BIGINT"/>
+            <column name="decision" type="VARCHAR(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="decided_at" type="TIMESTAMP"/>
+            <column name="rejection_reason" type="VARCHAR(2000)"/>
+            <column name="comments" type="VARCHAR(4000)"/>
+            <column name="evidence_snapshot" type="TEXT"/>
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="BIGINT"/>
+            <column name="updated_by" type="BIGINT"/>
+            <column name="company_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint baseTableName="work_order_verification" baseColumnNames="work_order_id"
+                                 constraintName="fk_work_order_verification_work_order"
+                                 referencedTableName="work_order" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+        <addForeignKeyConstraint baseTableName="work_order_verification" baseColumnNames="company_id"
+                                 constraintName="fk_work_order_verification_company"
+                                 referencedTableName="company" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+        <addForeignKeyConstraint baseTableName="work_order_verification" baseColumnNames="verifier_id"
+                                 constraintName="fk_work_order_verification_verifier"
+                                 referencedTableName="own_user" referencedColumnNames="id"
+                                 onDelete="SET NULL"/>
+
+        <createIndex tableName="work_order_verification" indexName="idx_work_order_verification_work_order">
+            <column name="work_order_id"/>
+        </createIndex>
+        <createIndex tableName="work_order_verification" indexName="idx_work_order_verification_company">
+            <column name="company_id"/>
+        </createIndex>
+        <createIndex tableName="work_order_verification" indexName="idx_work_order_verification_verifier">
+            <column name="verifier_id"/>
+        </createIndex>
+        <createIndex tableName="work_order_verification" indexName="idx_work_order_verification_company_decision">
+            <column name="company_id"/>
+            <column name="decision"/>
+        </createIndex>
+
+        <createSequence sequenceName="work_order_verification_seq" startValue="1" incrementBy="50"/>
+
+        <rollback>
+            <dropTable tableName="work_order_verification"/>
+            <dropSequence sequenceName="work_order_verification_seq"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_20_work_order_verification_00000000004" author="qoder">
+        <comment>Phase 4: mirror the audited verification/closure fields into the Envers audit table so that
+            ddl-auto validation succeeds</comment>
+        <addColumn tableName="work_order_aud">
+            <column name="verifier_id" type="BIGINT"/>
+            <column name="verifier_mod" type="BOOLEAN"/>
+            <column name="closed_on" type="TIMESTAMP"/>
+            <column name="closed_on_mod" type="BOOLEAN"/>
+            <column name="closed_by_id" type="BIGINT"/>
+            <column name="closed_by_mod" type="BOOLEAN"/>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="work_order_aud" columnName="closed_by_mod"/>
+            <dropColumn tableName="work_order_aud" columnName="closed_by_id"/>
+            <dropColumn tableName="work_order_aud" columnName="closed_on_mod"/>
+            <dropColumn tableName="work_order_aud" columnName="closed_on"/>
+            <dropColumn tableName="work_order_aud" columnName="verifier_mod"/>
+            <dropColumn tableName="work_order_aud" columnName="verifier_id"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

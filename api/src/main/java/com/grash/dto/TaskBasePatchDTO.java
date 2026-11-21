@@ -12,4 +12,7 @@ public class TaskBasePatchDTO {
     @Schema(description = "Task label")
     private String label;
 
+    @Schema(description = "Whether this checklist item is mandatory before verification approval")
+    private Boolean required;
+
 }

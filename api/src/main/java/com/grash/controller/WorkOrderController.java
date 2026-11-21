@@ -2,12 +2,22 @@ package com.grash.controller;
 
 import com.grash.advancedsearch.SearchCriteria;
 import com.grash.dto.*;
+import com.grash.dto.workOrder.WorkOrderLifecycleDTO;
 import com.grash.dto.workOrder.WorkOrderPatchDTO;
 import com.grash.dto.workOrder.WorkOrderPostDTO;
 import com.grash.dto.workOrder.WorkOrderSendReportDTO;
 import com.grash.dto.workOrder.WorkOrderShowDTO;
+import com.grash.dto.workOrder.WorkOrderTransitionRequestDTO;
+import com.grash.dto.workOrder.WorkOrderTransitionShowDTO;
+import com.grash.dto.workOrder.WorkOrderVerificationCountDTO;
+import com.grash.dto.workOrder.WorkOrderVerificationDecisionDTO;
+import com.grash.dto.workOrder.WorkOrderVerificationDetailDTO;
+import com.grash.dto.workOrder.WorkOrderVerificationHistoryDTO;
+import com.grash.dto.workOrder.WorkOrderVerificationQueueItemDTO;
+import com.grash.dto.workOrder.WorkOrderVerifierAssignmentDTO;
 import com.grash.exception.CustomException;
 import com.grash.mapper.FileMapper;
+import com.grash.mapper.UserMapper;
 import com.grash.mapper.WorkOrderMapper;
 import com.grash.model.*;
 import com.grash.model.enums.PermissionEntity;
@@ -40,12 +50,15 @@ import java.util.stream.Collectors;
 public class WorkOrderController {
 
     private final WorkOrderService workOrderService;
+    private final WorkOrderLifecycleService workOrderLifecycleService;
+    private final WorkOrderVerificationService workOrderVerificationService;
     private final WorkOrderMapper workOrderMapper;
     private final UserService userService;
     private final AssetService assetService;
     private final LocationService locationService;
     private final PartService partService;
     private final FileMapper fileMapper;
+    private final UserMapper userMapper;
 
     @PostMapping("/search")
     @PreAuthorize("permitAll()")
@@ -165,6 +178,110 @@ public class WorkOrderController {
         workOrderService.deleteByIdAndUser(id, user);
         return new ResponseEntity<>(new SuccessResponse(true, "Deleted successfully"),
                 HttpStatus.OK);
+    }
+
+    @GetMapping("/{id}/lifecycle")
+    @PreAuthorize("permitAll()")
+    public WorkOrderLifecycleDTO getLifecycle(@PathVariable("id") Long id, HttpServletRequest req) {
+        User user = userService.whoami(req);
+        WorkOrder workOrder = workOrderService.checkAccessToWorkOrderId(id, user);
+        return new WorkOrderLifecycleDTO(
+                workOrderLifecycleService.resolveCurrentState(workOrder),
+                workOrder.getStatus(),
+                workOrderLifecycleService.getAvailableTransitionOptions(workOrder, user));
+    }
+
+    @PostMapping("/{id}/lifecycle/transitions")
+    @PreAuthorize("hasRole('ROLE_CLIENT')")
+    public WorkOrderShowDTO requestTransition(@PathVariable("id") Long id,
+                                              @Valid @RequestBody WorkOrderTransitionRequestDTO request,
+                                              HttpServletRequest req,
+                                              @RequestHeader(value = "X-Platform", required = false)
+                                              String platform) {
+        User user = userService.whoami(req);
+        return workOrderMapper.toShowDto(workOrderService.transitionLifecycle(id, request, user, platform));
+    }
+
+    @GetMapping("/{id}/lifecycle/history")
+    @PreAuthorize("permitAll()")
+    public List<WorkOrderTransitionShowDTO> getTransitionHistory(@PathVariable("id") Long id,
+                                                                 HttpServletRequest req) {
+        User user = userService.whoami(req);
+        WorkOrder workOrder = workOrderService.checkAccessToWorkOrderId(id, user);
+        return workOrderLifecycleService.getHistory(workOrder).stream()
+                .map(transition -> new WorkOrderTransitionShowDTO(
+                        transition.getId(),
+                        workOrder.getId(),
+                        transition.getPreviousState(),
+                        transition.getNewState(),
+                        transition.getActor() != null ? userMapper.toMiniDto(transition.getActor()) : null,
+                        transition.getReasonCode(),
+                        transition.getReason(),
+                        transition.getMetadata(),
+                        transition.getCreatedAt()))
+                .collect(Collectors.toList());
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 4: supervisor verification
+    // ------------------------------------------------------------------
+
+    @GetMapping("/verification/queue")
+    @PreAuthorize("hasRole('ROLE_CLIENT')")
+    public List<WorkOrderVerificationQueueItemDTO> getVerificationQueue(
+            @RequestParam(value = "assignedToMe", defaultValue = "false") boolean assignedToMe,
+            HttpServletRequest req) {
+        return workOrderVerificationService.getQueue(userService.whoami(req), assignedToMe);
+    }
+
+    @GetMapping("/verification/count")
+    @PreAuthorize("hasRole('ROLE_CLIENT')")
+    public WorkOrderVerificationCountDTO getVerificationCount(
+            @RequestParam(value = "assignedToMe", defaultValue = "false") boolean assignedToMe,
+            HttpServletRequest req) {
+        return workOrderVerificationService.getCount(userService.whoami(req), assignedToMe);
+    }
+
+    @GetMapping("/{id}/verification")
+    @PreAuthorize("permitAll()")
+    public WorkOrderVerificationDetailDTO getVerificationDetails(@PathVariable("id") Long id,
+                                                                 HttpServletRequest req) {
+        return workOrderVerificationService.getDetails(id, userService.whoami(req));
+    }
+
+    @GetMapping("/{id}/verification/history")
+    @PreAuthorize("permitAll()")
+    public List<WorkOrderVerificationHistoryDTO> getVerificationHistory(@PathVariable("id") Long id,
+                                                                        HttpServletRequest req) {
+        return workOrderVerificationService.getHistory(id, userService.whoami(req));
+    }
+
+    @PutMapping("/{id}/verification/verifier")
+    @PreAuthorize("hasRole('ROLE_CLIENT')")
+    public WorkOrderVerificationDetailDTO assignVerifier(@PathVariable("id") Long id,
+                                                         @RequestBody WorkOrderVerifierAssignmentDTO assignment,
+                                                         HttpServletRequest req) {
+        return workOrderVerificationService.assignVerifier(id,
+                assignment != null ? assignment.getVerifierId() : null, userService.whoami(req));
+    }
+
+    @PostMapping("/{id}/verification/approve")
+    @PreAuthorize("hasRole('ROLE_CLIENT')")
+    public WorkOrderVerificationDetailDTO approveVerification(
+            @PathVariable("id") Long id,
+            @Valid @RequestBody(required = false) WorkOrderVerificationDecisionDTO decision,
+            @RequestHeader(value = "X-Platform", required = false) String platform,
+            HttpServletRequest req) {
+        return workOrderVerificationService.approve(id, decision, userService.whoami(req), platform);
+    }
+
+    @PostMapping("/{id}/verification/reject")
+    @PreAuthorize("hasRole('ROLE_CLIENT')")
+    public WorkOrderVerificationDetailDTO rejectVerification(
+            @PathVariable("id") Long id,
+            @Valid @RequestBody WorkOrderVerificationDecisionDTO decision,
+            HttpServletRequest req) {
+        return workOrderVerificationService.reject(id, decision, userService.whoami(req));
     }
 
     @GetMapping(path = "/report/{id}")

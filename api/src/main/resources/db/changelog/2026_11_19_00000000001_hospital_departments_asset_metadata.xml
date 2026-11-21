@@ -1,0 +1,269 @@
+<?xml version="1.1" encoding="UTF-8" standalone="no"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="2026_11_19_00000000001_hospital" author="qoder">
+        <comment>Hospital master data, additive only</comment>
+        <createTable tableName="hospital">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="BIGINT"/>
+            <column name="updated_by" type="BIGINT"/>
+            <column name="company_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_hospital_company" references="company(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="name" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="code" type="VARCHAR(64)"/>
+            <column name="address" type="VARCHAR(1000)"/>
+            <column name="phone" type="VARCHAR(64)"/>
+            <column name="email" type="VARCHAR(255)"/>
+            <column name="timezone" type="VARCHAR(64)"/>
+            <column name="description" type="VARCHAR(5000)"/>
+            <column name="active" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="hospital" columnNames="company_id, code"
+                             constraintName="uk_hospital_company_code"/>
+        <createIndex tableName="hospital" indexName="idx_hospital_company">
+            <column name="company_id"/>
+        </createIndex>
+        <createSequence sequenceName="hospital_seq" startValue="1" incrementBy="50"/>
+        <rollback>
+            <dropTable tableName="hospital"/>
+            <dropSequence sequenceName="hospital_seq"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_19_00000000002_department" author="qoder">
+        <comment>Department master data, additive only</comment>
+        <createTable tableName="department">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="BIGINT"/>
+            <column name="updated_by" type="BIGINT"/>
+            <column name="company_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_department_company" references="company(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="name" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="code" type="VARCHAR(64)"/>
+            <column name="description" type="VARCHAR(5000)"/>
+            <column name="hospital_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_department_hospital" references="hospital(id)"/>
+            </column>
+            <column name="parent_department_id" type="BIGINT">
+                <constraints foreignKeyName="fk_department_parent" references="department(id)"/>
+            </column>
+            <column name="active" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="department" columnNames="hospital_id, code"
+                             constraintName="uk_department_hospital_code"/>
+        <createIndex tableName="department" indexName="idx_department_company">
+            <column name="company_id"/>
+        </createIndex>
+        <createIndex tableName="department" indexName="idx_department_hospital">
+            <column name="hospital_id"/>
+        </createIndex>
+        <createSequence sequenceName="department_seq" startValue="1" incrementBy="50"/>
+        <rollback>
+            <dropTable tableName="department"/>
+            <dropSequence sequenceName="department_seq"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_19_00000000003_user_scope" author="qoder">
+        <comment>User data scopes for hospital/department/location access</comment>
+        <createTable tableName="user_scope">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="BIGINT"/>
+            <column name="updated_by" type="BIGINT"/>
+            <column name="company_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_user_scope_company" references="company(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="user_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_user_scope_user" references="own_user(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="hospital_id" type="BIGINT">
+                <constraints foreignKeyName="fk_user_scope_hospital" references="hospital(id)" deleteCascade="true"/>
+            </column>
+            <column name="department_id" type="BIGINT">
+                <constraints foreignKeyName="fk_user_scope_department" references="department(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="location_id" type="BIGINT">
+                <constraints foreignKeyName="fk_user_scope_location" references="location(id)" deleteCascade="true"/>
+            </column>
+            <column name="primary_scope" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <createIndex tableName="user_scope" indexName="idx_user_scope_user">
+            <column name="company_id"/>
+            <column name="user_id"/>
+        </createIndex>
+        <createSequence sequenceName="user_scope_seq" startValue="1" incrementBy="50"/>
+        <rollback>
+            <dropTable tableName="user_scope"/>
+            <dropSequence sequenceName="user_scope_seq"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_19_00000000004_location_hierarchy" author="qoder">
+        <comment>Attach locations to hospitals and departments, add building/floor/room</comment>
+        <addColumn tableName="location">
+            <column name="hospital_id" type="BIGINT"/>
+            <column name="department_id" type="BIGINT"/>
+            <column name="building" type="VARCHAR(255)"/>
+            <column name="floor" type="VARCHAR(255)"/>
+            <column name="room" type="VARCHAR(255)"/>
+        </addColumn>
+        <addForeignKeyConstraint baseTableName="location" baseColumnNames="hospital_id"
+                                 referencedTableName="hospital" referencedColumnNames="id"
+                                 constraintName="fk_location_hospital" onDelete="SET NULL"/>
+        <addForeignKeyConstraint baseTableName="location" baseColumnNames="department_id"
+                                 referencedTableName="department" referencedColumnNames="id"
+                                 constraintName="fk_location_department" onDelete="SET NULL"/>
+        <createIndex tableName="location" indexName="idx_location_hospital">
+            <column name="company_id"/>
+            <column name="hospital_id"/>
+        </createIndex>
+        <createIndex tableName="location" indexName="idx_location_department">
+            <column name="company_id"/>
+            <column name="department_id"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="location" indexName="idx_location_department"/>
+            <dropIndex tableName="location" indexName="idx_location_hospital"/>
+            <dropForeignKeyConstraint baseTableName="location" constraintName="fk_location_department"/>
+            <dropForeignKeyConstraint baseTableName="location" constraintName="fk_location_hospital"/>
+            <dropColumn tableName="location" columnName="hospital_id"/>
+            <dropColumn tableName="location" columnName="department_id"/>
+            <dropColumn tableName="location" columnName="building"/>
+            <dropColumn tableName="location" columnName="floor"/>
+            <dropColumn tableName="location" columnName="room"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_19_00000000005_asset_metadata" author="qoder">
+        <comment>Asset tag, opaque QR token, department and hospital classification fields</comment>
+        <addColumn tableName="asset">
+            <column name="asset_tag" type="VARCHAR(128)"/>
+            <column name="qr_token" type="VARCHAR(64)"/>
+            <column name="department_id" type="BIGINT"/>
+            <column name="criticality" type="VARCHAR(32)" defaultValue="MEDIUM">
+                <constraints nullable="false"/>
+            </column>
+            <column name="equipment_type" type="VARCHAR(32)" defaultValue="OTHER">
+                <constraints nullable="false"/>
+            </column>
+            <column name="clinical_impact" type="VARCHAR(32)" defaultValue="NON_CLINICAL">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <addForeignKeyConstraint baseTableName="asset" baseColumnNames="department_id"
+                                 referencedTableName="department" referencedColumnNames="id"
+                                 constraintName="fk_asset_department" onDelete="SET NULL"/>
+        <createIndex tableName="asset" indexName="idx_asset_department">
+            <column name="company_id"/>
+            <column name="department_id"/>
+        </createIndex>
+        <createIndex tableName="asset" indexName="idx_asset_criticality">
+            <column name="company_id"/>
+            <column name="criticality"/>
+        </createIndex>
+        <addUniqueConstraint tableName="asset" columnNames="company_id, qr_token"
+                             constraintName="uk_asset_company_qr_token"/>
+        <addUniqueConstraint tableName="asset" columnNames="company_id, asset_tag"
+                             constraintName="uk_asset_company_asset_tag"/>
+        <rollback>
+            <dropUniqueConstraint tableName="asset" constraintName="uk_asset_company_asset_tag"/>
+            <dropUniqueConstraint tableName="asset" constraintName="uk_asset_company_qr_token"/>
+            <dropIndex tableName="asset" indexName="idx_asset_criticality"/>
+            <dropIndex tableName="asset" indexName="idx_asset_department"/>
+            <dropForeignKeyConstraint baseTableName="asset" constraintName="fk_asset_department"/>
+            <dropColumn tableName="asset" columnName="asset_tag"/>
+            <dropColumn tableName="asset" columnName="qr_token"/>
+            <dropColumn tableName="asset" columnName="department_id"/>
+            <dropColumn tableName="asset" columnName="criticality"/>
+            <dropColumn tableName="asset" columnName="equipment_type"/>
+            <dropColumn tableName="asset" columnName="clinical_impact"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_19_00000000006_backfill_asset_qr_token" author="qoder">
+        <comment>Generate opaque QR tokens for pre-existing assets</comment>
+        <sql>
+            UPDATE asset
+            SET qr_token = md5(random()::text || clock_timestamp()::text || id::text)
+            WHERE qr_token IS NULL;
+        </sql>
+        <rollback>
+            <sql>UPDATE asset SET qr_token = NULL;</sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_19_00000000007_seed_hospital_permission" author="qoder">
+        <comment>Grant the appended HOSPITALS_AND_DEPARTMENTS permission (ordinal 15) to existing
+            administrator roles so that administrators are not locked out of the new master data.
+        </comment>
+        <sql>
+            INSERT INTO role_create_permissions (role_id, create_permissions)
+            SELECT r.id, 15 FROM role r
+            WHERE r.code = 0 AND NOT EXISTS (SELECT 1 FROM role_create_permissions p WHERE p.role_id = r.id AND p.create_permissions = 15);
+            INSERT INTO role_view_permissions (role_id, view_permissions)
+            SELECT r.id, 15 FROM role r
+            WHERE r.code = 0 AND NOT EXISTS (SELECT 1 FROM role_view_permissions p WHERE p.role_id = r.id AND p.view_permissions = 15);
+            INSERT INTO role_view_other_permissions (role_id, view_other_permissions)
+            SELECT r.id, 15 FROM role r
+            WHERE r.code = 0 AND NOT EXISTS (SELECT 1 FROM role_view_other_permissions p WHERE p.role_id = r.id AND p.view_other_permissions = 15);
+            INSERT INTO role_edit_other_permissions (role_id, edit_other_permissions)
+            SELECT r.id, 15 FROM role r
+            WHERE r.code = 0 AND NOT EXISTS (SELECT 1 FROM role_edit_other_permissions p WHERE p.role_id = r.id AND p.edit_other_permissions = 15);
+            INSERT INTO role_delete_other_permissions (role_id, delete_other_permissions)
+            SELECT r.id, 15 FROM role r
+            WHERE r.code = 0 AND NOT EXISTS (SELECT 1 FROM role_delete_other_permissions p WHERE p.role_id = r.id AND p.delete_other_permissions = 15);
+        </sql>
+        <rollback>
+            <sql>
+                DELETE FROM role_create_permissions WHERE create_permissions = 15;
+                DELETE FROM role_view_permissions WHERE view_permissions = 15;
+                DELETE FROM role_view_other_permissions WHERE view_other_permissions = 15;
+                DELETE FROM role_edit_other_permissions WHERE edit_other_permissions = 15;
+                DELETE FROM role_delete_other_permissions WHERE delete_other_permissions = 15;
+            </sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

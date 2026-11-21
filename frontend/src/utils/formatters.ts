@@ -22,6 +22,12 @@ export const formatAssetValues = (values) => {
   newValues.primaryUser = formatSelect(newValues.primaryUser);
   newValues.location = formatSelect(newValues.location);
   newValues.category = formatSelect(newValues.category);
+  newValues.department = formatSelect(newValues.department);
+  newValues.criticality = newValues.criticality?.value ?? newValues.criticality;
+  newValues.equipmentType =
+    newValues.equipmentType?.value ?? newValues.equipmentType;
+  newValues.clinicalImpact =
+    newValues.clinicalImpact?.value ?? newValues.clinicalImpact;
   newValues.parentAsset = formatSelect(newValues.parentAsset);
   newValues.customers = formatSelectMultiple(newValues.customers);
   newValues.vendors = formatSelectMultiple(newValues.vendors);

@@ -18,6 +18,7 @@ import CategoryTwoToneIcon from '@mui/icons-material/CategoryTwoTone';
 import AttachFileTwoToneIcon from '@mui/icons-material/AttachFileTwoTone';
 import { GroupsTwoTone, People } from '@mui/icons-material';
 import LocationOnTwoToneIcon from '@mui/icons-material/LocationOnTwoTone';
+import LocalHospitalTwoToneIcon from '@mui/icons-material/LocalHospitalTwoTone';
 import Inventory2TwoToneIcon from '@mui/icons-material/Inventory2TwoTone';
 import HandymanTwoToneIcon from '@mui/icons-material/HandymanTwoTone';
 import SpeedTwoToneIcon from '@mui/icons-material/SpeedTwoTone';
@@ -150,6 +151,22 @@ const ownMenuItems: MenuItems[] = [
         icon: LocationOnTwoToneIcon,
         permission: PermissionEntity.LOCATIONS,
         uiConfigKey: 'locations'
+      },
+      {
+        name: 'hospitals_and_departments',
+        link: '/app/hospitals',
+        icon: LocalHospitalTwoToneIcon,
+        permission: PermissionEntity.HOSPITALS_AND_DEPARTMENTS,
+        items: [
+          {
+            name: 'hospitals',
+            link: '/app/hospitals'
+          },
+          {
+            name: 'departments',
+            link: '/app/departments'
+          }
+        ]
       },
       {
         name: 'parts_and_inventory',

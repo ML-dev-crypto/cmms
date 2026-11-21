@@ -79,6 +79,12 @@ class LocationServiceTest {
     private RequestPortalService requestPortalService;
     @Mock
     private ClientIpResolver clientIpResolver;
+    @Mock
+    private HospitalService hospitalService;
+    @Mock
+    private DepartmentService departmentService;
+    @Mock
+    private DataScopeService dataScopeService;
 
     private Company company;
     private User user;
@@ -90,6 +96,10 @@ class LocationServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(dataScopeService.isRestricted(any())).thenReturn(false);
+        lenient().when(dataScopeService.canAccessHospital(any(), any())).thenReturn(true);
+        lenient().when(dataScopeService.canAccessDepartment(any(), any())).thenReturn(true);
+
         subscriptionPlan = SubscriptionPlan.builder()
                 .id(1L)
                 .name("Pro")

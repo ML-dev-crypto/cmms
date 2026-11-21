@@ -3,6 +3,23 @@ const { codeInspectorPlugin } = require('code-inspector-plugin');
 
 module.exports = {
   webpack: function override(config, env) {
+    // Opt-in escape hatch for environments where the forked TypeScript checker
+    // cannot start (for example newer Node.js releases). Type checking remains
+    // covered by `tsc --noEmit`.
+    if (process.env.DISABLE_FORK_TS_CHECKER === 'true') {
+      config.plugins = config.plugins.filter(
+        (plugin) => plugin.constructor.name !== 'ForkTsCheckerWebpackPlugin'
+      );
+    }
+    // Opt-in low memory mode: run minification in the main process instead of
+    // spawning one worker per CPU core.
+    if (process.env.LOW_MEMORY_BUILD === 'true') {
+      (config.optimization.minimizer || []).forEach((minimizer) => {
+        if (minimizer && minimizer.options) {
+          minimizer.options.parallel = false;
+        }
+      });
+    }
     if (env === 'development') {
       config.plugins.push(
         codeInspectorPlugin({

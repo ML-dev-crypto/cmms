@@ -403,6 +403,8 @@ function Locations() {
     newValues.workers = formatSelectMultiple(newValues.workers);
     newValues.teams = formatSelectMultiple(newValues.teams);
     newValues.parentLocation = formatSelect(newValues.parentLocation);
+    newValues.hospital = formatSelect(newValues.hospital);
+    newValues.department = formatSelect(newValues.department);
     newValues.longitude = newValues.coordinates?.lng;
     newValues.latitude = newValues.coordinates?.lat;
     return formatCustomFields(newValues);
@@ -584,6 +586,35 @@ function Locations() {
       placeholder: '13th St, New York'
     },
     {
+      name: 'hospital',
+      type: 'select',
+      type2: 'hospital',
+      label: t('hospital'),
+      placeholder: t('select_hospital')
+    },
+    {
+      name: 'department',
+      type: 'select',
+      type2: 'department',
+      label: t('department'),
+      placeholder: t('select_department')
+    },
+    {
+      name: 'building',
+      type: 'text',
+      label: t('building')
+    },
+    {
+      name: 'floor',
+      type: 'text',
+      label: t('floor')
+    },
+    {
+      name: 'room',
+      type: 'text',
+      label: t('room')
+    },
+    {
       name: 'parentLocation',
       type: 'select',
       type2: 'parentLocation',
@@ -693,6 +724,12 @@ function Locations() {
       : null,
     parentLocation: entity?.parentLocation
       ? { label: entity.parentLocation.name, value: entity.parentLocation.id }
+      : null,
+    hospital: entity?.hospital
+      ? { label: entity.hospital.name, value: entity.hospital.id }
+      : null,
+    department: entity?.department
+      ? { label: entity.department.name, value: entity.department.id }
       : null,
     ...getCustomFieldsValues(entity)
   });

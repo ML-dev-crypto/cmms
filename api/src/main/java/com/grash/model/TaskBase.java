@@ -12,6 +12,7 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.FetchType;
@@ -34,6 +35,10 @@ public class TaskBase extends CompanyAudit {
 
     @Schema(description = "Type of task")
     private TaskType taskType = TaskType.SUBTASK;
+
+    @Column(name = "required", nullable = false)
+    @Schema(description = "Whether this checklist item must be completed before verification approval")
+    private boolean required = false;
 
     @OneToMany(
             mappedBy = "taskBase",

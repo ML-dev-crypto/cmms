@@ -1,0 +1,127 @@
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <changeSet id="2026_11_19_work_order_lifecycle_00000000001" author="qoder">
+        <comment>Phase 3: add the string lifecycle_state column to work_order (nullable first for backfill)</comment>
+        <addColumn tableName="work_order">
+            <column name="lifecycle_state" type="VARCHAR(32)"/>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="work_order" columnName="lifecycle_state"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_19_work_order_lifecycle_00000000002" author="qoder">
+        <comment>Phase 3: backfill lifecycle_state from the legacy Status ordinal
+            (0 OPEN=REPORTED, 1 IN_PROGRESS=IN_PROGRESS, 2 ON_HOLD=WAITING_ON_HOLD, 3 COMPLETE=CLOSED)</comment>
+        <sql>
+            UPDATE work_order
+            SET lifecycle_state = CASE status
+                WHEN 1 THEN 'IN_PROGRESS'
+                WHEN 2 THEN 'WAITING_ON_HOLD'
+                WHEN 3 THEN 'CLOSED'
+                ELSE 'REPORTED'
+            END
+            WHERE lifecycle_state IS NULL
+        </sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="2026_11_19_work_order_lifecycle_00000000003" author="qoder">
+        <comment>Phase 3: enforce lifecycle_state not null with a safe default for future raw inserts</comment>
+        <addNotNullConstraint tableName="work_order" columnName="lifecycle_state"
+                              columnDataType="VARCHAR(32)" defaultNullValue="REPORTED"/>
+        <addDefaultValue tableName="work_order" columnName="lifecycle_state" defaultValue="REPORTED"/>
+        <createIndex tableName="work_order" indexName="idx_work_order_lifecycle_state">
+            <column name="lifecycle_state"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="work_order" indexName="idx_work_order_lifecycle_state"/>
+            <dropDefaultValue tableName="work_order" columnName="lifecycle_state"/>
+            <dropNotNullConstraint tableName="work_order" columnName="lifecycle_state"
+                                   columnDataType="VARCHAR(32)"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_19_work_order_lifecycle_00000000004" author="qoder">
+        <comment>Phase 3: append-only work order lifecycle transition history</comment>
+        <createTable tableName="work_order_transition">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" primaryKeyName="pk_work_order_transition" nullable="false"/>
+            </column>
+            <column name="work_order_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="previous_state" type="VARCHAR(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="new_state" type="VARCHAR(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="actor_id" type="BIGINT"/>
+            <column name="reason_code" type="VARCHAR(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reason" type="VARCHAR(2000)"/>
+            <column name="metadata" type="TEXT"/>
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="BIGINT"/>
+            <column name="updated_by" type="BIGINT"/>
+            <column name="company_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint baseTableName="work_order_transition" baseColumnNames="work_order_id"
+                                 constraintName="fk_work_order_transition_work_order"
+                                 referencedTableName="work_order" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+        <addForeignKeyConstraint baseTableName="work_order_transition" baseColumnNames="company_id"
+                                 constraintName="fk_work_order_transition_company"
+                                 referencedTableName="company" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+        <addForeignKeyConstraint baseTableName="work_order_transition" baseColumnNames="actor_id"
+                                 constraintName="fk_work_order_transition_actor"
+                                 referencedTableName="own_user" referencedColumnNames="id"
+                                 onDelete="SET NULL"/>
+
+        <createIndex tableName="work_order_transition" indexName="idx_work_order_transition_work_order">
+            <column name="work_order_id"/>
+        </createIndex>
+        <createIndex tableName="work_order_transition" indexName="idx_work_order_transition_company">
+            <column name="company_id"/>
+        </createIndex>
+        <createIndex tableName="work_order_transition" indexName="idx_work_order_transition_created_at">
+            <column name="created_at"/>
+        </createIndex>
+
+        <createSequence sequenceName="work_order_transition_seq" startValue="1" incrementBy="50"/>
+
+        <rollback>
+            <dropTable tableName="work_order_transition"/>
+            <dropSequence sequenceName="work_order_transition_seq"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="2026_11_19_work_order_lifecycle_00000000005" author="qoder">
+        <comment>Phase 3: mirror the audited lifecycle_state field (and its modified flag) into the Envers
+            audit table so that ddl-auto validation succeeds</comment>
+        <addColumn tableName="work_order_aud">
+            <column name="lifecycle_state" type="VARCHAR(32)"/>
+            <column name="lifecycle_state_mod" type="BOOLEAN"/>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="work_order_aud" columnName="lifecycle_state"/>
+            <dropColumn tableName="work_order_aud" columnName="lifecycle_state_mod"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

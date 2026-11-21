@@ -2,6 +2,7 @@ package com.grash.repository;
 
 import com.grash.model.WorkOrder;
 import com.grash.model.enums.Priority;
+import com.grash.model.enums.WorkOrderLifecycleState;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -16,6 +17,27 @@ import java.util.Optional;
 
 public interface WorkOrderRepository extends JpaRepository<WorkOrder, Long>, JpaSpecificationExecutor<WorkOrder> {
     Collection<WorkOrder> findByCompany_Id(Long id);
+
+    @Query("SELECT w FROM WorkOrder w " +
+            "LEFT JOIN FETCH w.asset " +
+            "LEFT JOIN FETCH w.location " +
+            "LEFT JOIN FETCH w.completedBy " +
+            "LEFT JOIN FETCH w.verifier " +
+            "WHERE w.company.id = :companyId AND w.lifecycleState = :state " +
+            "ORDER BY w.completedOn ASC, w.id ASC")
+    List<WorkOrder> findVerificationQueue(@Param("companyId") Long companyId,
+                                          @Param("state") WorkOrderLifecycleState state);
+
+    @Query("SELECT w FROM WorkOrder w " +
+            "LEFT JOIN FETCH w.asset " +
+            "LEFT JOIN FETCH w.location " +
+            "LEFT JOIN FETCH w.completedBy " +
+            "LEFT JOIN FETCH w.verifier " +
+            "WHERE w.company.id = :companyId AND w.lifecycleState = :state AND w.verifier.id = :verifierId " +
+            "ORDER BY w.completedOn ASC, w.id ASC")
+    List<WorkOrder> findVerificationQueueForVerifier(@Param("companyId") Long companyId,
+                                                     @Param("state") WorkOrderLifecycleState state,
+                                                     @Param("verifierId") Long verifierId);
 
     @Query("SELECT w FROM WorkOrder w " +
             "LEFT JOIN FETCH w.asset " +

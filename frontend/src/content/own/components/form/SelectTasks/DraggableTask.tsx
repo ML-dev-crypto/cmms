@@ -5,13 +5,16 @@ import { Draggable } from 'react-beautiful-dnd';
 import {
   Box,
   Button,
+  Checkbox,
   Collapse,
+  FormControlLabel,
   IconButton,
   ListItem,
   Menu,
   MenuItem,
   Select,
-  TextField
+  TextField,
+  Tooltip
 } from '@mui/material';
 import { makeStyles } from '@mui/styles';
 import DragIndicatorTwoToneIcon from '@mui/icons-material/DragIndicatorTwoTone';
@@ -41,6 +44,7 @@ export type DraggableListItemProps = {
   onAssetChange: (asset: AssetMiniDTO, id: number) => void;
   onMeterChange: (meter: MeterMiniDTO, id: number) => void;
   onChoicesChange: (choices: string[], id: number) => void;
+  onRequiredChange: (required: boolean, id: number) => void;
   onRemove: (id: number) => void;
   assetsMini: AssetMiniDTO[];
   usersMini: UserMiniDTO[];
@@ -57,6 +61,7 @@ const DraggableListItem = ({
                              onAssetChange,
                              onMeterChange,
                              onChoicesChange,
+                             onRequiredChange,
                              assetsMini,
                              usersMini,
                              metersMini
@@ -187,6 +192,21 @@ const DraggableListItem = ({
                     </MenuItem>
                   ))}
                 </Select>
+                <Tooltip title={t('verification_required_help')}>
+                  <FormControlLabel
+                    sx={{ ml: 1, mr: 0 }}
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={!!task.taskBase.required}
+                        onChange={(event) =>
+                          onRequiredChange(event.target.checked, task.id)
+                        }
+                      />
+                    }
+                    label={t('verification_required')}
+                  />
+                </Tooltip>
                 <Box>
                   <IconButton onClick={() => onRemove(task.id)}>
                     <DoDisturbOnTwoToneIcon color="error" />

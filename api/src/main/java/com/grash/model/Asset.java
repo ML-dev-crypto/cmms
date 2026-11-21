@@ -5,6 +5,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.grash.dto.IdDTO;
 import com.grash.model.abstracts.CompanyAudit;
 import com.grash.model.enums.AssetStatus;
+import com.grash.model.enums.ClinicalImpact;
+import com.grash.model.enums.Criticality;
+import com.grash.model.enums.EquipmentType;
 import com.grash.model.enums.PermissionEntity;
 import com.grash.utils.Helper;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -30,6 +33,10 @@ import static java.util.stream.Collectors.toCollection;
 @Entity
 @Data
 @NoArgsConstructor
+@Table(name = "asset", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_asset_company_qr_token", columnNames = {"company_id", "qr_token"}),
+        @UniqueConstraint(name = "uk_asset_company_asset_tag", columnNames = {"company_id", "asset_tag"})
+})
 @Schema(description = "Asset entity representing equipment, machinery, or property in the CMMS system")
 public class Asset extends CompanyAudit {
 
@@ -60,6 +67,28 @@ public class Asset extends CompanyAudit {
 
     @Schema(description = "Barcode identifier for the asset")
     private String barCode;
+
+    @Schema(description = "Stable asset tag, independent from the barcode and the system identifier")
+    private String assetTag;
+
+    @Schema(description = "Opaque token encoded in the asset QR code", accessMode = Schema.AccessMode.READ_ONLY)
+    private String qrToken;
+
+    @Schema(description = "Department responsible for the asset", implementation = IdDTO.class)
+    @ManyToOne(fetch = FetchType.LAZY)
+    private Department department;
+
+    @Schema(description = "Business criticality of the asset")
+    @Enumerated(EnumType.STRING)
+    private Criticality criticality = Criticality.MEDIUM;
+
+    @Schema(description = "High level equipment type")
+    @Enumerated(EnumType.STRING)
+    private EquipmentType equipmentType = EquipmentType.OTHER;
+
+    @Schema(description = "Clinical impact of an asset failure")
+    @Enumerated(EnumType.STRING)
+    private ClinicalImpact clinicalImpact = ClinicalImpact.NON_CLINICAL;
 
     @Schema(description = "The category of the asset", implementation = IdDTO.class)
     @ManyToOne(fetch = FetchType.LAZY)
@@ -206,6 +235,13 @@ public class Asset extends CompanyAudit {
     @ArraySchema(schema = @Schema(implementation = IdDTO.class))
     @Schema(description = "Custom fields", accessMode = Schema.AccessMode.READ_ONLY)
     private List<CustomFieldValue> customFieldValues = new ArrayList<>();
+
+    @PrePersist
+    public void ensureQrToken() {
+        if (this.qrToken == null || this.qrToken.isBlank()) {
+            this.qrToken = UUID.randomUUID().toString().replace("-", "");
+        }
+    }
 
     public Collection<User> getUsers() {
         Collection<User> users = new ArrayList<>();

@@ -1,5 +1,6 @@
 package com.grash.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.grash.dto.IdDTO;
 import com.grash.model.abstracts.CompanyAudit;
@@ -37,6 +38,27 @@ public class Location extends CompanyAudit {
 
     @Schema(description = "The physical address of the location")
     private String address;
+
+    @Schema(description = "Hospital the location belongs to", implementation = IdDTO.class)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "hospital_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private Hospital hospital;
+
+    @Schema(description = "Department the location belongs to", implementation = IdDTO.class)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private Department department;
+
+    @Schema(description = "Building name or number")
+    private String building;
+
+    @Schema(description = "Floor name or number")
+    private String floor;
+
+    @Schema(description = "Room name or number")
+    private String room;
 
     @Schema(description = "The longitude coordinate of the location")
     private Double longitude;

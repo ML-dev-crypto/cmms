@@ -45,7 +45,9 @@ export interface IField {
     | 'category'
     | 'parentLocation'
     | 'role'
-    | 'currency';
+    | 'currency'
+    | 'hospital'
+    | 'department';
   category?:
     | 'purchase-order-categories'
     | 'cost-categories'

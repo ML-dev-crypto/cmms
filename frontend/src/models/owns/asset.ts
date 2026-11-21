@@ -8,6 +8,29 @@ import { CustomerMiniDTO } from './customer';
 import File, { FileMiniDTO, FileThumbnailDTO } from './file';
 import Category from './category';
 import { CustomFieldValue } from './customField';
+import { DepartmentMiniDTO } from './department';
+
+export type Criticality = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+export type EquipmentType =
+  | 'MEDICAL_EQUIPMENT'
+  | 'LABORATORY'
+  | 'IMAGING'
+  | 'SURGICAL'
+  | 'LIFE_SUPPORT'
+  | 'UTILITY'
+  | 'HVAC'
+  | 'ELECTRICAL'
+  | 'PLUMBING'
+  | 'LIFT'
+  | 'FIRE_SAFETY'
+  | 'IT'
+  | 'FURNITURE'
+  | 'VEHICLE'
+  | 'OTHER';
+export type ClinicalImpact =
+  | 'DIRECT_PATIENT_CARE'
+  | 'INDIRECT_PATIENT_CARE'
+  | 'NON_CLINICAL';
 
 export default interface Asset extends Audit {
   id: number;
@@ -40,6 +63,12 @@ export interface AssetDTO extends Audit {
   serialNumber: string;
   status: AssetStatus;
   barCode: string;
+  assetTag?: string;
+  qrToken?: string;
+  department?: DepartmentMiniDTO | null;
+  criticality?: Criticality;
+  equipmentType?: EquipmentType;
+  clinicalImpact?: ClinicalImpact;
   category: Category;
   description: string;
   primaryUser: UserMiniDTO;

@@ -29,6 +29,8 @@ public interface WorkOrderMapper {
 
     WorkOrderBaseMiniDTO toBaseMiniDto(WorkOrder model);
 
+    @Mapping(target = "lifecycleState", ignore = true)
+    @Mapping(target = "status", ignore = true)
     WorkOrder fromPostDto(WorkOrderPostDTO workOrderPostDTO);
 
     WorkloadWorkOrderDTO toWorkloadDto(WorkOrder model);

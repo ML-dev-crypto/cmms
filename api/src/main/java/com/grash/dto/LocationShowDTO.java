@@ -21,6 +21,21 @@ public class LocationShowDTO extends AuditShowDTO {
     @Schema(description = "Address")
     private String address;
 
+    @Schema(description = "Hospital the location belongs to")
+    private HospitalMiniDTO hospital;
+
+    @Schema(description = "Department the location belongs to")
+    private DepartmentMiniDTO department;
+
+    @Schema(description = "Building name or number")
+    private String building;
+
+    @Schema(description = "Floor name or number")
+    private String floor;
+
+    @Schema(description = "Room name or number")
+    private String room;
+
     @Schema(description = "Longitude coordinate")
     private Double longitude;
 

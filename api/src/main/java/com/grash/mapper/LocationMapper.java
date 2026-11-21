@@ -12,8 +12,14 @@ import com.grash.service.LocationService;
 import org.mapstruct.*;
 
 @Mapper(componentModel = "spring", uses = {CustomerMapper.class, VendorMapper.class, UserMapper.class,
-        TeamMapper.class, FileMapper.class, CustomFieldValueMapper.class})
+        TeamMapper.class, FileMapper.class, CustomFieldValueMapper.class, HospitalMapper.class,
+        DepartmentMapper.class})
 public interface LocationMapper {
+
+    @Mappings({
+            @Mapping(target = "hospital", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE),
+            @Mapping(target = "department", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    })
     Location updateLocation(@MappingTarget Location entity, LocationPatchDTO dto);
 
     @Mappings({})

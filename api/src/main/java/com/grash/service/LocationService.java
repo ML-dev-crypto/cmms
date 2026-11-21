@@ -56,6 +56,9 @@ public class LocationService {
     private final RateLimiterService rateLimiterService;
     private final RequestPortalService requestPortalService;
     private final ClientIpResolver clientIpResolver;
+    private final HospitalService hospitalService;
+    private final DepartmentService departmentService;
+    private final DataScopeService dataScopeService;
 
     @Transactional
     public Location create(LocationPostDTO dto, User user) {
@@ -68,6 +71,7 @@ public class LocationService {
             setLocationCustomFields(location, dto.getCustomFields(), company);
         }
         location.setCustomId(getLocationNumber(company));
+        resolveHierarchy(location, user);
         Sanitizer.sanitizeLocation(location);
 
         Location savedLocation = locationRepository.saveAndFlush(location);
@@ -95,6 +99,7 @@ public class LocationService {
                     setLocationCustomFields(savedLocation, location.getCustomFields(), company);
                 }
                 Location patchedLocation = locationMapper.updateLocation(savedLocation, location);
+                resolveHierarchy(patchedLocation, user);
                 Sanitizer.sanitizeLocation(patchedLocation);
                 patchedLocation = locationRepository.saveAndFlush(patchedLocation);
                 em.refresh(patchedLocation);
@@ -102,6 +107,38 @@ public class LocationService {
                 return patchedLocation;
             } else throw new CustomException("Forbidden", HttpStatus.FORBIDDEN);
         } else throw new CustomException("Location not found", HttpStatus.NOT_FOUND);
+    }
+
+    private void resolveHierarchy(Location location, User user) {
+        Long companyId = user.getCompany().getId();
+        if (location.getDepartment() != null && location.getDepartment().getId() != null) {
+            Department department = departmentService.findByIdAndCompany(location.getDepartment().getId(), companyId)
+                    .orElseThrow(() -> new CustomException("Department not found", HttpStatus.NOT_FOUND));
+            if (!dataScopeService.canAccessDepartment(user, department)) {
+                throw new CustomException("Department is outside your data scope", HttpStatus.FORBIDDEN);
+            }
+            location.setDepartment(department);
+            if (location.getHospital() == null) {
+                location.setHospital(department.getHospital());
+            } else if (department.getHospital() != null && location.getHospital().getId() != null
+                    && !department.getHospital().getId().equals(location.getHospital().getId())) {
+                throw new CustomException("Department does not belong to the selected hospital",
+                        HttpStatus.NOT_ACCEPTABLE);
+            }
+        }
+        if (location.getHospital() != null && location.getHospital().getId() != null) {
+            Hospital hospital = hospitalService.findByIdAndCompany(location.getHospital().getId(), companyId)
+                    .orElseThrow(() -> new CustomException("Hospital not found", HttpStatus.NOT_FOUND));
+            if (!dataScopeService.canAccessHospital(user, hospital)) {
+                throw new CustomException("Hospital is outside your data scope", HttpStatus.FORBIDDEN);
+            }
+            location.setHospital(hospital);
+        }
+        if (dataScopeService.isRestricted(user) && location.getHospital() == null
+                && location.getDepartment() == null) {
+            throw new CustomException("A location must belong to one of your scoped hospitals or departments",
+                    HttpStatus.FORBIDDEN);
+        }
     }
 
     private void checkUsageBasedLimit(Company company) {
