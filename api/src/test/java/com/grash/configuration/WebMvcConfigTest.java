@@ -37,14 +37,16 @@ class WebMvcConfigTest {
     @Mock
     private CurrentUserResolver currentUserResolver;
 
+    private AllowedOriginsResolver allowedOriginsResolver;
     private WebMvcConfig webMvcConfig;
 
     @BeforeEach
     void setUp() {
-        webMvcConfig = new WebMvcConfig(currentUserResolver);
-        ReflectionTestUtils.setField(webMvcConfig, "frontendUrl", "http://localhost:3000");
-        ReflectionTestUtils.setField(webMvcConfig, "frontendHomeUrl", "http://localhost:3001");
-        ReflectionTestUtils.setField(webMvcConfig, "allowedOrigins", RAILWAY_ORIGIN);
+        allowedOriginsResolver = new AllowedOriginsResolver();
+        ReflectionTestUtils.setField(allowedOriginsResolver, "frontendUrl", "http://localhost:3000");
+        ReflectionTestUtils.setField(allowedOriginsResolver, "frontendHomeUrl", "http://localhost:3001");
+        ReflectionTestUtils.setField(allowedOriginsResolver, "allowedOrigins", RAILWAY_ORIGIN);
+        webMvcConfig = new WebMvcConfig(currentUserResolver, allowedOriginsResolver);
         ReflectionTestUtils.setField(webMvcConfig, "enableCors", true);
     }
 
@@ -78,7 +80,7 @@ class WebMvcConfigTest {
 
     @Test
     void addCorsMappings_ignoresWildcardOrigin() {
-        ReflectionTestUtils.setField(webMvcConfig, "allowedOrigins", "*, https://extra.example.com");
+        ReflectionTestUtils.setField(allowedOriginsResolver, "allowedOrigins", "*, https://extra.example.com");
 
         ExposedCorsRegistry registry = new ExposedCorsRegistry();
         webMvcConfig.addCorsMappings(registry);
@@ -90,8 +92,8 @@ class WebMvcConfigTest {
 
     @Test
     void addCorsMappings_normalizesTrailingSlashAndDuplicates() {
-        ReflectionTestUtils.setField(webMvcConfig, "frontendUrl", "https://app.example.com/");
-        ReflectionTestUtils.setField(webMvcConfig, "allowedOrigins", " https://app.example.com , ");
+        ReflectionTestUtils.setField(allowedOriginsResolver, "frontendUrl", "https://app.example.com/");
+        ReflectionTestUtils.setField(allowedOriginsResolver, "allowedOrigins", " https://app.example.com , ");
 
         ExposedCorsRegistry registry = new ExposedCorsRegistry();
         webMvcConfig.addCorsMappings(registry);

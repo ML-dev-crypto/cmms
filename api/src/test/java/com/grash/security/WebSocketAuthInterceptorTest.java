@@ -10,14 +10,14 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -25,7 +25,6 @@ class WebSocketAuthInterceptorTest {
 
     @Mock
     private JwtTokenProvider jwtTokenProvider;
-
     @Mock
     private MessageChannel channel;
 
@@ -33,41 +32,46 @@ class WebSocketAuthInterceptorTest {
     private WebSocketAuthInterceptor interceptor;
 
     @Test
-    void connectWithValidToken_setsAuthentication() {
-        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
-        accessor.setLeaveMutable(true);
-        accessor.setNativeHeader("token", "valid-jwt");
-        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
-        Authentication auth = mock(Authentication.class);
-        when(jwtTokenProvider.getAuthentication("valid-jwt")).thenReturn(auth);
+    void connect_withToken_setsAuthenticatedPrincipal() {
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken("doctor@hospital.test", null);
+        when(jwtTokenProvider.getAuthentication("jwt-token")).thenReturn(authentication);
 
-        interceptor.preSend(message, channel);
+        Message<?> result = interceptor.preSend(connectMessage("jwt-token"), channel);
 
-        assertSame(auth, accessor.getUser());
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertSame(authentication, accessor.getUser());
     }
 
     @Test
-    void connectWithoutToken_doesNotSetAuthentication() {
-        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
-        accessor.setLeaveMutable(true);
-        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    void connect_withoutToken_leavesConnectionAnonymous() {
+        Message<?> result = interceptor.preSend(connectMessage(null), channel);
 
-        interceptor.preSend(message, channel);
-
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
         assertNull(accessor.getUser());
-        verify(jwtTokenProvider, never()).getAuthentication(anyString());
+        verifyNoInteractions(jwtTokenProvider);
     }
 
     @Test
-    void nonConnectMessage_isNotAuthenticated() {
+    void otherCommands_areNotAuthenticatedByTheInterceptor() {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setNativeHeader("token", "jwt-token");
         accessor.setLeaveMutable(true);
-        accessor.setNativeHeader("token", "valid-jwt");
         Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
 
-        interceptor.preSend(message, channel);
+        Message<?> result = interceptor.preSend(message, channel);
 
-        assertNull(accessor.getUser());
-        verify(jwtTokenProvider, never()).getAuthentication(anyString());
+        StompHeaderAccessor resultAccessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertNull(resultAccessor.getUser());
+        verifyNoInteractions(jwtTokenProvider);
+    }
+
+    private static Message<?> connectMessage(String token) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        if (token != null) {
+            accessor.setNativeHeader("token", token);
+        }
+        accessor.setLeaveMutable(true);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
 }

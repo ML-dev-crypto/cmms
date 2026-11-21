@@ -157,8 +157,15 @@ function HeaderNotifications() {
     };
     if (user) {
       if (!stompClient) {
-        const socket = new SockJS(`${apiUrl}ws`);
-        const client = Stomp.over(socket);
+        const client = Stomp.over(() => new SockJS(`${apiUrl}ws`));
+        // Reconnect re-reads the token and re-subscribes, since the subscription is
+        // created inside the connect callback.
+        client.beforeConnect = () => {
+          client.connectHeaders = {
+            token: localStorage.getItem('accessToken')
+          };
+        };
+        client.reconnectDelay = 5000;
         client.connect(
           { token: localStorage.getItem('accessToken') },
           function (frame) {

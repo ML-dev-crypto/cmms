@@ -40,10 +40,11 @@ class CorsPreflightTest {
 
     @BeforeEach
     void setUp() {
-        WebMvcConfig config = new WebMvcConfig(mock(CurrentUserResolver.class));
-        ReflectionTestUtils.setField(config, "frontendUrl", "https://legacy-frontend.example.com");
-        ReflectionTestUtils.setField(config, "frontendHomeUrl", "");
-        ReflectionTestUtils.setField(config, "allowedOrigins", FRONTEND_ORIGIN);
+        AllowedOriginsResolver allowedOriginsResolver = new AllowedOriginsResolver();
+        ReflectionTestUtils.setField(allowedOriginsResolver, "frontendUrl", "https://legacy-frontend.example.com");
+        ReflectionTestUtils.setField(allowedOriginsResolver, "frontendHomeUrl", "");
+        ReflectionTestUtils.setField(allowedOriginsResolver, "allowedOrigins", FRONTEND_ORIGIN);
+        WebMvcConfig config = new WebMvcConfig(mock(CurrentUserResolver.class), allowedOriginsResolver);
         ReflectionTestUtils.setField(config, "enableCors", true);
 
         CapturingCorsRegistry registry = new CapturingCorsRegistry();

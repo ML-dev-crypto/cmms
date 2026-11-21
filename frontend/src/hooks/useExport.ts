@@ -41,8 +41,7 @@ export const useExport = (): UseExportReturn => {
   const { user } = useAuth();
   // Initialize WebSocket connection
   useEffect(() => {
-    const socket = new SockJS(`${apiUrl}ws`);
-    const client = Stomp.over(socket);
+    const client = Stomp.over(() => new SockJS(`${apiUrl}ws`));
     client.connect({ token: localStorage.getItem('accessToken') }, () => {
       setStompClient(client);
     });
